@@ -53,7 +53,7 @@
 ```bash
 # 直接从 GitHub 安装到个人 Skill 目录
 mkdir -p ~/.agents/skills
-git clone https://github.com/dwfg55efvvedevr/dingxinglizi.git \
+git clone https://github.com/lizi-product-studio/dingxinglizi.git \
   ~/.agents/skills/software-project-orchestrator
 
 # 个人范围：对所有项目可用
