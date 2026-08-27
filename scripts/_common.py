@@ -24,9 +24,12 @@ REQUIRED_DOCS = [
     "docs/09-api-data-contract.md",
     "docs/10-test-plan.md",
     "docs/checklists/product-completeness.md",
+    "docs/checklists/problem-quality.md",
+    "docs/checklists/solution-challenge.md",
+    "docs/checklists/quality-case.md",
 ]
 
-REQUIRED_AGENTS = [
+AVAILABLE_PROFESSIONAL_ROLES = [
     "orchestrator",
     "requirements",
     "product_auditor",
@@ -35,7 +38,11 @@ REQUIRED_AGENTS = [
     "architect",
     "engineering_lead",
     "qa",
+    "quality_governor",
 ]
+
+# Backward-compatible name: these profiles must exist, but are not all active.
+REQUIRED_AGENTS = AVAILABLE_PROFESSIONAL_ROLES
 
 CANONICAL_STATES = [
     "BACKLOG",

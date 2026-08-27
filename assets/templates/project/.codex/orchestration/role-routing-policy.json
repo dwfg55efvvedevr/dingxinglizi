@@ -1,0 +1,16 @@
+{
+  "policy_version": "1.2.0",
+  "routing_unit": "current_gate",
+  "orchestrator_runtime": "main_thread",
+  "default_quota_mode": "economy",
+  "quota_modes": {
+    "economy": {"max_active_subagents": 1, "parallel_read_only": false},
+    "balanced": {"max_active_subagents": 2, "parallel_read_only": true},
+    "quality_first": {"max_active_subagents": 2, "parallel_read_only": true}
+  },
+  "final_qa_separate_from_engineering": true,
+  "professional_agents_may_spawn": false,
+  "engineering_lead_may_spawn_workers": true,
+  "workers_may_spawn": false,
+  "complex_means_lifecycle_available_not_simultaneous": true
+}

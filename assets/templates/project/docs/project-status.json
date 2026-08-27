@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "project": "{{PROJECT_NAME}}",
   "complexity": "{{COMPLEXITY}}",
   "current_state": "BACKLOG",
@@ -9,10 +9,19 @@
   "approval_authority": "BLOCKING_UNKNOWN",
   "risk_acceptance_authority": "BLOCKING_UNKNOWN",
   "execution_control": {
-    "model_routing_policy": "1.1.0",
+    "model_routing_policy": "1.2.0",
+    "role_routing_policy": "1.2.0",
     "capability_policy": "1.1.0",
+    "quota_mode": "economy",
+    "max_active_subagents": 1,
+    "active_sessions": [],
     "active_attempts": 0,
     "blocked_reason_code": null
+  },
+  "quality_gates": {
+    "problem": {"status": "PENDING", "mode": "INLINE", "reviewer": "orchestrator", "session": null, "version": null, "input_fingerprint": null, "evidence": []},
+    "solution": {"status": "PENDING", "mode": "INLINE", "reviewer": "orchestrator", "session": null, "version": null, "input_fingerprint": null, "evidence": []},
+    "release_evidence": {"status": "PENDING", "mode": "INLINE", "reviewer": "orchestrator", "session": null, "version": null, "input_fingerprint": null, "evidence": []}
   },
   "gates": {
     "requirements": {"status": "PENDING", "version": null, "evidence": []},

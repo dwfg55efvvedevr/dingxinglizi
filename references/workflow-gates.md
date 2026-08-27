@@ -6,6 +6,8 @@
 
 Because UI and architecture may proceed in parallel after UX stabilizes, `docs/project-status.json` records individual gates as well as one `current_state`. `READY_FOR_BUILD` requires `requirements`, `product`, `ux`, `ui`, and `architecture` gates to be `APPROVED`. A Simple project may merge role ownership, but it still records approval evidence for every gate.
 
+Three cross-cutting quality subgates are also mandatory: Problem Quality before `REQUIREMENTS_APPROVED`, Solution Challenge before `READY_FOR_BUILD`, and Release Evidence before `RELEASE_READY`. The checklist is mandatory; a separate Quality Governor is triggered only by the role plan. See [quality-governance.md](quality-governance.md).
+
 | Gate | Required evidence | Failure/rework owner |
 |---|---|---|
 | Requirements | approved context, domain rules, glossary, PRD; no P0/P1 blocking unknown | Requirements |

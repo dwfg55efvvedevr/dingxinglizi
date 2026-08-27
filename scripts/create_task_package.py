@@ -11,6 +11,7 @@ from pathlib import Path
 
 from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_AGENTS, project_root
 from model_routing import route_fingerprint, route_with_inventory, validate_model_policy
+from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION
 
 
 WORKERS = {"frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"}
@@ -82,6 +83,22 @@ def create(
     complexity = status.get("complexity")
     if complexity not in {"Simple", "Standard", "Complex"}:
         raise ValueError("docs/project-status.json has no valid Simple/Standard/Complex complexity")
+    role_plan_path = root / ".codex/orchestration/role-plan.json"
+    try:
+        role_plan = json.loads(role_plan_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        role_plan = {"status": "NOT_ROUTED", "plan_fingerprint": "NOT_ROUTED", "quota_mode": "economy"}
+    if role_plan.get("status") == "ROUTED" and owner != "orchestrator":
+        worker_allowed = (
+            owner in WORKERS
+            and owner in role_plan.get("delegable_workers", [])
+            and "engineering_lead" in role_plan.get("required_now", [])
+            and role_plan.get("max_concurrent_workers", 0) >= 1
+        )
+        if owner not in role_plan.get("required_now", []) and not worker_allowed:
+            raise ValueError(f"owner {owner} is not required_now or delegable in the current role plan")
+        if stage != role_plan.get("current_stage"):
+            raise ValueError("Task Package stage does not match the current role plan stage")
     inventory_path = root / ".codex/orchestration/runtime-inventory.json"
     inventory: dict[str, object] = {}
     try:
@@ -127,6 +144,15 @@ may_spawn_workers: {may_spawn_workers}
 priority: "P2"
 objective: {quoted(objective)}
 task_type: {quoted(task_type)}
+role_execution:
+  policy_version: {quoted(ROLE_POLICY_VERSION)}
+  role_plan_fingerprint: {quoted(str(role_plan.get('plan_fingerprint') or 'NOT_ROUTED'))}
+  status: {quoted(str(role_plan.get('status') or 'NOT_ROUTED'))}
+  quota_mode: {quoted(str(role_plan.get('quota_mode') or 'economy'))}
+  activation_reasons:{yaml_list(role_plan.get('activation_reasons', {}).get(owner, []) or (["delegated-by:engineering_lead", "signal:implementation_workers"] if owner in WORKERS else []), 4)}
+  merged_responsibilities:{yaml_list(role_plan.get('merged_responsibilities', {}).get(owner, []), 4)}
+  reviewer_activation: "deferred_until_owner_handoff"
+  concurrency_slot: 1
 risk_profile:
   flags:{yaml_list(route['risk_flags'], 4)}
   failed_attempts: {failed_attempts}
@@ -149,6 +175,14 @@ execution_profile:
   max_attempts: {route['max_attempts']}
   downgrade_policy: {quoted(route['downgrade_policy'])}
   escalation_history: []
+quality_review:
+  gate: {quoted(str(role_plan.get('quality_gate') or 'NOT_APPLICABLE'))}
+  review_mode: {quoted('INDEPENDENT' if owner == 'quality_governor' else 'NOT_APPLICABLE')}
+  decision_question: "BLOCKING_UNKNOWN"
+  input_fingerprint: {quoted(str(role_plan.get('input_fingerprint') or 'BLOCKING_UNKNOWN'))}
+  selected_lenses: []
+  adversarial_tests: []
+  quality_case_ref: "BLOCKING_UNKNOWN"
 capability_requirements:
   required:{yaml_list(required_capabilities, 4)}
   optional:{yaml_list(optional_capabilities, 4)}

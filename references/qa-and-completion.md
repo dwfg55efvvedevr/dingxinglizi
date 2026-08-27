@@ -23,6 +23,8 @@ Skipped required tests are not a pass. If environment or data prevents a require
 4. implementation, tests, migrations, decisions, contracts, and user-facing docs agree;
 5. QA is independent and its conclusion is recorded;
 6. release/rollback evidence exists when applicable;
-7. external deployment, public release, customer communication, purchase, credential use, or irreversible action has separate explicit authorization.
+7. Problem Quality, Solution Challenge, and Release Evidence quality gates are approved with current input fingerprints;
+8. no Engineering/Worker session remains active at final QA, and no task/session remains active at `DONE`;
+9. external deployment, public release, customer communication, purchase, credential use, or irreversible action has separate explicit authorization.
 
 Report the final state, baseline versions, tests/evidence, defects, accepted risks, deferred work, and next authorization. “Code complete” or “tests passed locally” alone is not `DONE`.

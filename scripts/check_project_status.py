@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_DOCS, find_tabl
 from check_missing_modules import check as check_modules
 from check_traceability import check as check_traceability
 from validate_documents import check as validate_documents
+from route_roles import source_fingerprint
 
 
 BUILD_GATES = ("requirements", "product", "ux", "ui", "architecture")
@@ -23,6 +25,13 @@ GATE_DOCS = {
     "ui": ("docs/07-design-system.md",),
     "architecture": ("docs/05-state-permission-matrix.md", "docs/08-system-design.md", "docs/09-api-data-contract.md"),
 }
+
+QUALITY_GATE_DOCS = {
+    "problem": "docs/checklists/problem-quality.md",
+    "solution": "docs/checklists/solution-challenge.md",
+    "release_evidence": "docs/checklists/quality-case.md",
+}
+QUALITY_GATE_STAGES = {"problem": "DISCOVERY", "solution": "READY_FOR_BUILD", "release_evidence": "QA_PASS"}
 
 REWORK_OWNERS = {
     "REWORK_REQUIREMENTS": "requirements",
@@ -169,6 +178,39 @@ def validate_approval_bundle(root, status, gates):
     return errors
 
 
+def validate_quality_gate(root, status, gate):
+    errors = []
+    record = status.get("quality_gates", {}).get(gate, {})
+    if record.get("status") != "APPROVED":
+        return [f"Quality gate '{gate}' must be APPROVED"]
+    if record.get("mode") not in {"INLINE", "INDEPENDENT"}:
+        errors.append(f"Quality gate '{gate}' mode must be INLINE or INDEPENDENT")
+    if not record.get("version") or not record.get("evidence"):
+        errors.append(f"Quality gate '{gate}' needs version and evidence")
+    fingerprint = record.get("input_fingerprint", "")
+    if not isinstance(fingerprint, str) or not re.fullmatch(r"[a-f0-9]{64}", fingerprint):
+        errors.append(f"Quality gate '{gate}' needs a SHA-256 input_fingerprint")
+    elif fingerprint != source_fingerprint(root, QUALITY_GATE_STAGES[gate]):
+        errors.append(f"Quality gate '{gate}' input_fingerprint is stale or does not match current inputs")
+    if record.get("mode") == "INDEPENDENT":
+        if record.get("reviewer") != "quality_governor" or not record.get("session"):
+            errors.append(f"Independent quality gate '{gate}' requires quality_governor and a session")
+    elif record.get("reviewer") != "orchestrator":
+        errors.append(f"Inline quality gate '{gate}' reviewer must be orchestrator")
+    for reference in record.get("evidence", []):
+        if not evidence_exists(root, reference):
+            errors.append(f"Quality gate '{gate}' evidence does not exist or is outside the project: {reference}")
+    relative = QUALITY_GATE_DOCS[gate]
+    path = root / relative
+    if path.is_file():
+        text = read_text(path)
+        if parse_frontmatter(text).get("status") != "APPROVED":
+            errors.append(f"{relative}: status must be APPROVED for quality gate '{gate}'")
+        if "- Conclusion: PASS" not in text:
+            errors.append(f"{relative}: conclusion must be PASS for quality gate '{gate}'")
+    return errors
+
+
 def check(root, target: str | None) -> tuple[list[str], list[str]]:
     errors, warnings = validate_documents(root)
     status_path = root / "docs/project-status.json"
@@ -254,7 +296,11 @@ def check(root, target: str | None) -> tuple[list[str], list[str]]:
         if status.get("approval_authority") in {None, "", "BLOCKING_UNKNOWN"}:
             errors.append(f"approval_authority must be confirmed for {requested}")
 
+    if requested not in {"BACKLOG", "DISCOVERY"}:
+        errors.extend(validate_quality_gate(root, status, "problem"))
+
     if requested in build_or_later:
+        errors.extend(validate_quality_gate(root, status, "solution"))
         module_errors, module_warnings = check_modules(root)
         trace_errors, trace_warnings = check_traceability(root)
         errors.extend(module_errors)
@@ -310,6 +356,7 @@ def check(root, target: str | None) -> tuple[list[str], list[str]]:
                 errors.append(f"Accepted-risk evidence does not exist or is outside the project: {risk.get('evidence')}")
 
     if requested in release_or_later:
+        errors.extend(validate_quality_gate(root, status, "release_evidence"))
         release = status.get("gates", {}).get("release", {})
         if release.get("status") not in {"APPROVED", "NOT_APPLICABLE"}:
             errors.append("Gate 'release' must be APPROVED or NOT_APPLICABLE for DONE")
@@ -319,6 +366,15 @@ def check(root, target: str | None) -> tuple[list[str], list[str]]:
             errors.extend(validate_gate_evidence(root, status, ("release",)))
         if release.get("status") == "NOT_APPLICABLE" and not release.get("reason"):
             errors.append("NOT_APPLICABLE release gate needs a reason")
+    active_sessions = status.get("execution_control", {}).get("active_sessions", [])
+    if requested in ready_for_qa_or_later:
+        forbidden_active = {"engineering_lead", "frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"}
+        active_roles = {item.get("role") for item in active_sessions if isinstance(item, dict)}
+        overlap = sorted(active_roles & forbidden_active)
+        if overlap:
+            errors.append("Engineering/Worker sessions must exit before READY_FOR_QA: " + ", ".join(overlap))
+    if requested == "DONE" and (active_sessions or status.get("active_tasks")):
+        errors.append("DONE requires no active sessions or active tasks")
     return errors, warnings
 
 

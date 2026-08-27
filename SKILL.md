@@ -13,20 +13,24 @@ Operate one project delivery system in which the Skill owns workflow, Custom Age
 2. Resolve bundled script paths relative to this Skill directory. If the project has not been initialized, run `python3 scripts/init_project.py PROJECT_DIR --project-name "NAME" --domain "DOMAIN"`. Do not overwrite an existing project contract; merge compatible rules manually and preserve stricter rules.
 3. Read `docs/00-project-context.md`, `01-domain-rules.md`, `02-glossary.md`, `04-prd.md`, `docs/project-status.json`, the current task package, and any approved stage-specific documents. Treat chat history as non-authoritative until a decision is written back.
 4. Classify material facts as `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`. Ask only for unknowns that would make a safe, testable result diverge materially.
-5. Choose `Simple`, `Standard`, or `Complex` using [complexity-routing.md](references/complexity-routing.md). Use the smallest role set that preserves independent final QA.
-6. Inspect the current runtime's supported model choices and refresh `.codex/orchestration/runtime-inventory.json` with `status: VERIFIED`, the exact model slugs, time and evidence source. This is Orchestrator work, not user configuration. If availability cannot be verified, routing must block.
-7. Build a task package with task type, risk flags and capability needs. `create_task_package.py` deterministically resolves the Luna/Terra/Sol execution profile against the verified inventory. Read [model-routing.md](references/model-routing.md).
-8. Before spawning the owner, resolve required capabilities through [capability-resolution.md](references/capability-resolution.md). Only the Orchestrator may change the project capability policy, catalog, lock or managed MCP configuration.
-9. Run `python3 scripts/check_execution_plan.py PROJECT_DIR tasks/TASK-001.yaml`. Spawn only after it reports `READY`.
-10. Spawn the Agent with the Task Package's explicit `selected_model` and `model_reasoning_effort`. Do not start governed work when routing or a required capability is blocked.
+5. Choose `Simple`, `Standard`, or `Complex` using [complexity-routing.md](references/complexity-routing.md). Complexity defines responsibilities available across the lifecycle, not how many Agents start now.
+6. Read [on-demand-role-routing.md](references/on-demand-role-routing.md), then run `python3 scripts/route_roles.py PROJECT_DIR --stage CURRENT_STAGE --write`. Keep Orchestrator in the main thread and start only `required_now`, wave by wave. Default to `economy`; installed role profiles are not active sessions.
+7. Complete the applicable lightweight quality checklist. Read [product-thinking-kernel.md](references/product-thinking-kernel.md) for a product decision and [quality-governance.md](references/quality-governance.md) when the current stage is a quality subgate. Read [product-lenses.md](references/product-lenses.md) only when a listed trigger applies. Invoke Quality Governor only when the role plan says `INDEPENDENT_REQUIRED`.
+8. Inspect the current runtime's supported model choices and refresh `.codex/orchestration/runtime-inventory.json` with `status: VERIFIED`, the exact model slugs, time and evidence source. This is Orchestrator work, not user configuration. If availability cannot be verified, routing must block.
+9. Build a task package only for a `required_now` owner or a currently delegable Worker. `create_task_package.py` records the current role-plan fingerprint and deterministically resolves the Luna/Terra/Sol execution profile against the verified inventory. It intentionally generates `DRAFT`; complete the contract, have Orchestrator set `READY_FOR_DISPATCH`, then preflight. Read [task-packages.md](references/task-packages.md) and [model-routing.md](references/model-routing.md).
+10. Before spawning the owner, resolve required capabilities through [capability-resolution.md](references/capability-resolution.md). Only the Orchestrator may change the project capability policy, catalog, lock or managed MCP configuration.
+11. Run `python3 scripts/check_execution_plan.py PROJECT_DIR tasks/TASK-001.yaml --record-ready`. Spawn only after it records a dispatch receipt and reports `READY`; a stale role plan, excessive wave, early reviewer, model/runtime route mismatch, or missing capability blocks without a receipt.
+12. Spawn with the Task Package's explicit model and reasoning effort. Persist a successful handoff with artifacts/evidence, mark the package `COMPLETED`, release file ownership, and remove the role from the active set. Re-route with `--completed-role OWNER --completed-task OWNER=tasks/TASK.yaml`; the router requires the matching dispatch READY receipt and verifies the handoff against the prior role/model/capability plan before exposing the next wave. Re-route without completion claims when stage or signals change, or when inputs change outside the claimed owner's handoff.
 
 ## Orchestration constraints
 
 - Keep exactly one Orchestrator responsible for global scheduling, state, conflicts, gates, and final synthesis.
+- Orchestrator is the main thread, never another spawned Agent. All professional profiles may exist on disk without consuming a subagent call.
 - Only the Orchestrator may coordinate all professional Agents. Engineering Lead may coordinate only temporary implementation Workers. Other roles must return artifacts and findings to the Orchestrator.
 - A Worker may not spawn another Agent. Give every Worker a bounded objective, owned files, acceptance criteria, and return target.
 - Keep one writer per shared mutable file. Parallelize independent read-heavy audit, exploration, design, architecture, and QA work only when file ownership is disjoint.
 - Development and final QA must be different sessions or Agents at every complexity level.
+- Do not pre-start downstream roles or reviewers. Default to one active subagent; allow two only when the role plan marks independent read-only work safe. Complex never means “start everyone.”
 - Require every delegated role to read project documents; never rely on inherited session memory as the only business context.
 - Do not hard-code a model in a role TOML. Route each Task Package from role, complexity, task type, risk and prior valid failures. A missing required Sol route blocks; it never silently downgrades.
 - Professional Agents and Workers may declare or recommend capabilities but may not download, install, authenticate, or edit runtime configuration themselves. Provision centrally before dispatch.
@@ -55,6 +59,8 @@ Do not enter `READY_FOR_BUILD` unless the role-page, page-feature, feature-state
 ## Stage-specific work
 
 - Discovery or unclear domain: read [document-contract.md](references/document-contract.md) and [domain-adaptation.md](references/domain-adaptation.md).
+- Product problem, solution, metric, or prioritization decisions: read [product-thinking-kernel.md](references/product-thinking-kernel.md); load [product-lenses.md](references/product-lenses.md) only for a matching decision trigger.
+- Problem, solution, or release-evidence challenge: read [quality-governance.md](references/quality-governance.md).
 - Requirements and product completeness: read [product-completeness.md](references/product-completeness.md).
 - UX or UI: read [ui-quality.md](references/ui-quality.md).
 - Architecture, permissions, APIs, or data: read [architecture-contract.md](references/architecture-contract.md).

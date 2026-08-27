@@ -19,7 +19,9 @@ PYTHON = sys.executable
 sys.path.insert(0, str(SCRIPTS))
 
 from model_routing import route_task  # noqa: E402
+from role_routing import route_roles  # noqa: E402
 from resolve_capabilities import download_skill  # noqa: E402
+from dispatch_receipt import receipt_path  # noqa: E402
 
 
 def run(script: str, *args: object) -> subprocess.CompletedProcess[str]:
@@ -30,6 +32,32 @@ def run(script: str, *args: object) -> subprocess.CompletedProcess[str]:
         stderr=subprocess.STDOUT,
         check=False,
     )
+
+
+def make_task_ready(path: Path, *, quality: bool = False) -> None:
+    text = path.read_text(encoding="utf-8")
+    text = text.replace('status: "DRAFT"', 'status: "READY_FOR_DISPATCH"', 1)
+    text = text.replace('  value: "BLOCKING_UNKNOWN"', '  value: "Approved test value"', 1)
+    text = text.replace('scope: []', 'scope:\n  - "Complete the bounded test objective"', 1)
+    text = text.replace('deliverables: []', 'deliverables:\n  - "Verified test deliverable"', 1)
+    text = text.replace('allowed_files: []', 'allowed_files:\n  - "docs/00-project-context.md"', 1)
+    text = text.replace('    given: "BLOCKING_UNKNOWN"', '    given: "Approved inputs exist"', 1)
+    text = text.replace('    when: "BLOCKING_UNKNOWN"', '    when: "The owner performs the task"', 1)
+    text = text.replace('    then: "BLOCKING_UNKNOWN"', '    then: "The expected result is observable"', 1)
+    text = text.replace('    evidence: "BLOCKING_UNKNOWN"', '    evidence: "evidence/TASK-result.txt"', 1)
+    text = text.replace('  commands: []', '  commands:\n    - "python3 --version"', 1)
+    if quality:
+        text = text.replace('  decision_question: "BLOCKING_UNKNOWN"', '  decision_question: "Is the current claim supported?"', 1)
+        text = text.replace('  quality_case_ref: "BLOCKING_UNKNOWN"', '  quality_case_ref: "docs/checklists/problem-quality.md"', 1)
+    path.write_text(text, encoding="utf-8")
+
+
+def mark_task_completed(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    text = text.replace('status: "READY_FOR_DISPATCH"', 'status: "COMPLETED"', 1)
+    text = text.replace('  conclusion: "BLOCKED"', '  conclusion: "COMPLETED"', 1)
+    text = text.replace('  artifacts: []', '  artifacts:\n    - "docs/04-prd.md"', 1)
+    path.write_text(text, encoding="utf-8")
 
 
 class ModelRoutingTests(unittest.TestCase):
@@ -92,6 +120,87 @@ class ModelRoutingTests(unittest.TestCase):
         self.assertEqual(empty["status"], "BLOCKED_MODEL_UNAVAILABLE")
 
 
+class RoleRoutingTests(unittest.TestCase):
+    def test_identical_role_input_is_deterministic(self) -> None:
+        kwargs = dict(complexity="Complex", stage="DISCOVERY", quota_mode="economy", signals=["novel_problem"])
+        self.assertEqual(route_roles(**kwargs), route_roles(**kwargs))
+
+    def test_simple_discovery_starts_only_requirements(self) -> None:
+        plan = route_roles(complexity="Simple", stage="DISCOVERY")
+        self.assertEqual(plan["required_now"], ["requirements"])
+        self.assertFalse(plan["orchestrator"]["spawn"])
+        self.assertNotIn("qa", plan["required_now"])
+
+    def test_complex_does_not_start_all_roles(self) -> None:
+        plan = route_roles(complexity="Complex", stage="DISCOVERY")
+        self.assertEqual(plan["required_now"], ["requirements"])
+        self.assertEqual(plan["deferred_sequence"], ["quality_governor"])
+        self.assertEqual(plan["execution_waves"], [["requirements"], ["quality_governor"]])
+        self.assertLess(len(plan["required_now"]), len(plan["deferred_available"]))
+
+    def test_standard_product_gate_only_uses_product_auditor(self) -> None:
+        plan = route_roles(complexity="Standard", stage="REQUIREMENTS_APPROVED")
+        self.assertEqual(plan["required_now"], ["product_auditor"])
+
+    def test_ready_for_qa_activates_qa_not_engineering(self) -> None:
+        plan = route_roles(complexity="Complex", stage="READY_FOR_QA")
+        self.assertEqual(plan["required_now"], ["qa"])
+        self.assertNotIn("engineering_lead", plan["required_now"])
+
+    def test_solution_quality_blocks_owner_until_approved_then_reuses(self) -> None:
+        pending = route_roles(
+            complexity="Standard", stage="READY_FOR_BUILD", input_fingerprint="b" * 64,
+        )
+        self.assertEqual(pending["required_now"], [])
+        self.assertEqual(pending["quality_review_status"], "INLINE_REQUIRED")
+        approved = route_roles(
+            complexity="Standard", stage="READY_FOR_BUILD", input_fingerprint="b" * 64,
+            quality_gate_record={"status": "APPROVED", "input_fingerprint": "b" * 64},
+        )
+        self.assertEqual(approved["quality_review_status"], "REUSE_APPROVAL")
+        self.assertEqual(approved["required_now"], ["engineering_lead"])
+
+    def test_high_impact_adds_sequential_quality_governor(self) -> None:
+        plan = route_roles(
+            complexity="Standard", stage="DISCOVERY", quota_mode="balanced",
+            signals=["high_impact", "parallel_safe"],
+        )
+        self.assertEqual(plan["required_now"], ["requirements"])
+        self.assertEqual(plan["deferred_sequence"], ["quality_governor"])
+        self.assertEqual(plan["execution_waves"], [["requirements"], ["quality_governor"]])
+
+    def test_completed_role_advances_to_next_wave(self) -> None:
+        first = route_roles(
+            complexity="Complex", stage="CODE_REVIEW", quota_mode="economy",
+            signals=["contract_delta"],
+        )
+        self.assertEqual(first["required_now"], ["engineering_lead"])
+        self.assertEqual(first["deferred_sequence"], ["architect"])
+        second = route_roles(
+            complexity="Complex", stage="CODE_REVIEW", quota_mode="economy",
+            signals=["contract_delta"], completed_roles=["engineering_lead"],
+        )
+        self.assertEqual(second["required_now"], ["architect"])
+        self.assertEqual(second["completed_roles"], ["engineering_lead"])
+
+    def test_parallel_budget_never_exceeds_two(self) -> None:
+        plan = route_roles(
+            complexity="Complex", stage="DISCOVERY", quota_mode="quality_first",
+            signals=["parallel_safe"],
+        )
+        self.assertLessEqual(max(map(len, plan["execution_waves"])), 2)
+
+    def test_quality_governor_model_floor_is_task_routed(self) -> None:
+        standard = route_task(complexity="Standard", task_type="solution_challenge", role="quality_governor")
+        complex_route = route_task(complexity="Complex", task_type="solution_challenge", role="quality_governor")
+        self.assertEqual((standard["selected_model"], standard["model_reasoning_effort"]), ("gpt-5.6-terra", "high"))
+        self.assertEqual((complex_route["selected_model"], complex_route["model_reasoning_effort"]), ("gpt-5.6-sol", "high"))
+
+    def test_unknown_role_signal_fails_closed(self) -> None:
+        with self.assertRaises(ValueError):
+            route_roles(complexity="Standard", stage="DISCOVERY", signals=["start_everyone"])
+
+
 class CapabilityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -124,14 +233,18 @@ class CapabilityTests(unittest.TestCase):
         )
 
     def test_task_package_contains_route_and_capability_contract(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
         result = run(
             "create_task_package.py", self.root, "--task-id", "TASK-AUTO-1",
-            "--owner", "engineering_lead", "--reviewer", "qa",
-            "--objective", "Implement approved permissions", "--task-type", "implementation",
+            "--owner", "requirements", "--reviewer", "qa",
+            "--objective", "Establish approved permission intent", "--task-type", "requirements", "--stage", "DISCOVERY",
             "--risk", "permissions", "--required-capability", "github-read",
         )
         self.assertEqual(result.returncode, 0, result.stdout)
-        text = (self.root / "tasks/TASK-AUTO-1.yaml").read_text(encoding="utf-8")
+        task_path = self.root / "tasks/TASK-AUTO-1.yaml"
+        make_task_ready(task_path)
+        text = task_path.read_text(encoding="utf-8")
         self.assertIn('preferred_model: "gpt-5.6-sol"', text)
         self.assertIn('model_reasoning_effort: "high"', text)
         self.assertIn('required:\n    - "github-read"', text)
@@ -143,6 +256,52 @@ class CapabilityTests(unittest.TestCase):
         (skill / "SKILL.md").write_text("---\nname: github-read\ndescription: test\n---\n", encoding="utf-8")
         ready = run("check_execution_plan.py", self.root, "tasks/TASK-AUTO-1.yaml")
         self.assertEqual(ready.returncode, 0, ready.stdout)
+
+    def test_dispatch_receipt_rejects_unsafe_task_id_and_symlink_escape(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-SAFE-ID",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Verify receipt path safety", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        task_path = self.root / "tasks/TASK-SAFE-ID.yaml"
+        make_task_ready(task_path)
+        safe_text = task_path.read_text(encoding="utf-8")
+        outside = Path(self.temp.name) / "outside"
+        for unsafe in ("../../../outside/QA-ESCAPE", "/tmp/QA-ESCAPE"):
+            task_path.write_text(
+                safe_text.replace('task_id: "TASK-SAFE-ID"', f'task_id: "{unsafe}"', 1),
+                encoding="utf-8",
+            )
+            blocked = run("check_execution_plan.py", self.root, "tasks/TASK-SAFE-ID.yaml", "--record-ready")
+            self.assertEqual(blocked.returncode, 3, blocked.stdout)
+            self.assertIn("task_id must match", blocked.stdout)
+            with self.assertRaises(ValueError):
+                receipt_path(self.root, unsafe)
+        task_path.write_text(safe_text, encoding="utf-8")
+        dispatch_dir = self.root / "evidence/dispatch"
+        dispatch_dir.parent.mkdir(parents=True, exist_ok=True)
+        outside.mkdir(parents=True, exist_ok=True)
+        dispatch_dir.symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            receipt_path(self.root, "TASK-SAFE-ID")
+
+    def test_draft_task_contract_never_reports_ready(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-DRAFT-1",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Establish project facts", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        blocked = run("check_execution_plan.py", self.root, "tasks/TASK-DRAFT-1.yaml")
+        self.assertEqual(blocked.returncode, 3, blocked.stdout)
+        self.assertIn("status must be READY_FOR_DISPATCH", blocked.stdout)
+        self.assertIn("scope must contain", blocked.stdout)
+        self.assertIn("writing tasks need bounded allowed_files", blocked.stdout)
 
     def test_execution_preflight_detects_route_tampering(self) -> None:
         created = run(
@@ -161,6 +320,257 @@ class CapabilityTests(unittest.TestCase):
         result = run("check_execution_plan.py", self.root, "tasks/TASK-ROUTE-1.yaml")
         self.assertEqual(result.returncode, 3, result.stdout)
         self.assertIn("ROUTE_MISMATCH", result.stdout)
+
+    def test_execution_preflight_detects_role_plan_tampering(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-ROLE-1",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Establish project facts", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        plan_path = self.root / ".codex/orchestration/role-plan.json"
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        plan["max_active_subagents"] = 99
+        plan_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+        result = run("check_execution_plan.py", self.root, "tasks/TASK-ROLE-1.yaml")
+        self.assertEqual(result.returncode, 3, result.stdout)
+        self.assertIn("ROLE_ROUTE_MISMATCH", result.stdout)
+
+    def test_execution_preflight_blocks_stale_role_inputs(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-STALE-1",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Establish current project facts", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        make_task_ready(self.root / "tasks/TASK-STALE-1.yaml")
+        ready = run("check_execution_plan.py", self.root, "tasks/TASK-STALE-1.yaml")
+        self.assertEqual(ready.returncode, 0, ready.stdout)
+        context = self.root / "docs/00-project-context.md"
+        context.write_text(context.read_text(encoding="utf-8") + "\nMaterial input change.\n", encoding="utf-8")
+        stale = run("check_execution_plan.py", self.root, "tasks/TASK-STALE-1.yaml")
+        self.assertEqual(stale.returncode, 3, stale.stdout)
+        self.assertIn("STALE_ROLE_PLAN", stale.stdout)
+
+    def test_execution_preflight_reserves_quota_for_prospective_owner(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-SLOT-1",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Establish project facts", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        make_task_ready(self.root / "tasks/TASK-SLOT-1.yaml")
+        status_path = self.root / "docs/project-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["execution_control"]["active_sessions"] = [{
+            "session_id": "active-1", "task_id": "TASK-OTHER", "role": "product_auditor",
+            "parent_role": "orchestrator", "access_mode": "read-only",
+        }]
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        blocked = run("check_execution_plan.py", self.root, "tasks/TASK-SLOT-1.yaml")
+        self.assertEqual(blocked.returncode, 3, blocked.stdout)
+        self.assertIn("no subagent slot", blocked.stdout)
+        self.assertIn("outside the current wave", blocked.stdout)
+
+    def test_balanced_cannot_start_duplicate_professional_role(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-REQ-2",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Establish the second set of facts", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        make_task_ready(self.root / "tasks/TASK-REQ-2.yaml")
+        status_path = self.root / "docs/project-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["execution_control"]["active_sessions"] = [{
+            "session_id": "requirements-active-1", "task_id": "TASK-REQ-1",
+            "role": "requirements", "parent_role": "orchestrator", "access_mode": "write",
+        }]
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        blocked = run("check_execution_plan.py", self.root, "tasks/TASK-REQ-2.yaml")
+        self.assertEqual(blocked.returncode, 3, blocked.stdout)
+        self.assertIn("BLOCKED_DUPLICATE_ROLE", blocked.stdout)
+
+    def test_completed_wave_requires_matching_task_handoff(self) -> None:
+        routed = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--write",
+        )
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        inventory_path = self.root / ".codex/orchestration/runtime-inventory.json"
+        verified_inventory = inventory_path.read_text(encoding="utf-8")
+        inventory_path.write_text(json.dumps({
+            "schema_version": 1, "status": "UNVERIFIED", "available_models": [],
+            "verified_at": None, "verified_by": None,
+        }, indent=2) + "\n", encoding="utf-8")
+        no_model_created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-REQ-NOMODEL",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Attempt completion without a routed model", "--task-type", "requirements",
+        )
+        self.assertEqual(no_model_created.returncode, 0, no_model_created.stdout)
+        no_model_path = self.root / "tasks/TASK-REQ-NOMODEL.yaml"
+        make_task_ready(no_model_path)
+        no_model_preflight = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-REQ-NOMODEL.yaml", "--record-ready"
+        )
+        self.assertEqual(no_model_preflight.returncode, 3, no_model_preflight.stdout)
+        self.assertFalse((self.root / "evidence/dispatch/TASK-REQ-NOMODEL.ready.json").exists())
+        mark_task_completed(no_model_path)
+        no_model_completion = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements",
+            "--completed-task", "requirements=tasks/TASK-REQ-NOMODEL.yaml", "--write",
+        )
+        self.assertEqual(no_model_completion.returncode, 2, no_model_completion.stdout)
+        self.assertIn("dispatch READY receipt is missing", no_model_completion.stdout)
+        inventory_path.write_text(verified_inventory, encoding="utf-8")
+
+        no_cap_created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-REQ-NOCAP",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Attempt completion without a required capability", "--task-type", "requirements",
+            "--required-capability", "missing-required-skill",
+        )
+        self.assertEqual(no_cap_created.returncode, 0, no_cap_created.stdout)
+        no_cap_path = self.root / "tasks/TASK-REQ-NOCAP.yaml"
+        make_task_ready(no_cap_path)
+        no_cap_preflight = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-REQ-NOCAP.yaml", "--record-ready"
+        )
+        self.assertEqual(no_cap_preflight.returncode, 3, no_cap_preflight.stdout)
+        self.assertIn("BLOCKED_CAPABILITY", no_cap_preflight.stdout)
+        self.assertFalse((self.root / "evidence/dispatch/TASK-REQ-NOCAP.ready.json").exists())
+        mark_task_completed(no_cap_path)
+        no_cap_completion = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements",
+            "--completed-task", "requirements=tasks/TASK-REQ-NOCAP.yaml", "--write",
+        )
+        self.assertEqual(no_cap_completion.returncode, 2, no_cap_completion.stdout)
+        self.assertIn("dispatch READY receipt is missing", no_cap_completion.stdout)
+
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-REQ-HANDOFF",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Persist the requirements handoff", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        task_path = self.root / "tasks/TASK-REQ-HANDOFF.yaml"
+        make_task_ready(task_path)
+        dispatch_ready = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-REQ-HANDOFF.yaml", "--record-ready"
+        )
+        self.assertEqual(dispatch_ready.returncode, 0, dispatch_ready.stdout)
+        self.assertIn("RECORDED: evidence/dispatch/TASK-REQ-HANDOFF.ready.json", dispatch_ready.stdout)
+        mark_task_completed(task_path)
+        missing_proof = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements", "--write",
+        )
+        self.assertEqual(missing_proof.returncode, 2, missing_proof.stdout)
+        self.assertIn("matching --completed-task", missing_proof.stdout)
+        fake_created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-REQ-FAKE",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Attempt a fake completion", "--task-type", "requirements",
+        )
+        self.assertEqual(fake_created.returncode, 0, fake_created.stdout)
+        fake_path = self.root / "tasks/TASK-REQ-FAKE.yaml"
+        fake_text = fake_path.read_text(encoding="utf-8")
+        fake_text = fake_text.replace('status: "DRAFT"', 'status: "COMPLETED"', 1)
+        fake_text = fake_text.replace('  conclusion: "BLOCKED"', '  conclusion: "COMPLETED"', 1)
+        fake_text = fake_text.replace('  artifacts: []', '  artifacts:\n    - "docs/04-prd.md"', 1)
+        fake_path.write_text(fake_text, encoding="utf-8")
+        incomplete_contract = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements",
+            "--completed-task", "requirements=tasks/TASK-REQ-FAKE.yaml", "--write",
+        )
+        self.assertEqual(incomplete_contract.returncode, 2, incomplete_contract.stdout)
+        self.assertIn("Task Contract is invalid", incomplete_contract.stdout)
+        self.assertIn("business_context.value must be concrete", incomplete_contract.stdout)
+        valid_text = task_path.read_text(encoding="utf-8")
+        task_path.write_text(
+            valid_text.replace('    - "docs/04-prd.md"', '    - "evidence/THIS-FILE-DOES-NOT-EXIST.txt"', 1),
+            encoding="utf-8",
+        )
+        missing_reference = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements",
+            "--completed-task", "requirements=tasks/TASK-REQ-HANDOFF.yaml", "--write",
+        )
+        self.assertEqual(missing_reference.returncode, 2, missing_reference.stdout)
+        self.assertIn("reference does not exist", missing_reference.stdout)
+        task_path.write_text(
+            valid_text.replace('    - "docs/04-prd.md"', '    - "../outside-project.txt"', 1),
+            encoding="utf-8",
+        )
+        outside_reference = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements",
+            "--completed-task", "requirements=tasks/TASK-REQ-HANDOFF.yaml", "--write",
+        )
+        self.assertEqual(outside_reference.returncode, 2, outside_reference.stdout)
+        self.assertIn("outside the project", outside_reference.stdout)
+        task_path.write_text(valid_text, encoding="utf-8")
+        advanced = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "requirements",
+            "--completed-task", "requirements=tasks/TASK-REQ-HANDOFF.yaml", "--write",
+        )
+        self.assertEqual(advanced.returncode, 0, advanced.stdout)
+        plan = json.loads((self.root / ".codex/orchestration/role-plan.json").read_text(encoding="utf-8"))
+        self.assertEqual(plan["required_now"], ["quality_governor"])
+        self.assertEqual(plan["completed_roles"], ["requirements"])
+        cycle_id = plan["routing_cycle_id"]
+
+        quality_created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-PROBLEM-QUALITY",
+            "--owner", "quality_governor", "--reviewer", "orchestrator", "--stage", "DISCOVERY",
+            "--objective", "Challenge the persisted problem framing", "--task-type", "problem_quality",
+        )
+        self.assertEqual(quality_created.returncode, 0, quality_created.stdout)
+        quality_path = self.root / "tasks/TASK-PROBLEM-QUALITY.yaml"
+        make_task_ready(quality_path, quality=True)
+        quality_dispatch = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-PROBLEM-QUALITY.yaml", "--record-ready"
+        )
+        self.assertEqual(quality_dispatch.returncode, 0, quality_dispatch.stdout)
+        mark_task_completed(quality_path)
+        changed_signal = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "release_risk", "--completed-role", "quality_governor",
+            "--completed-task", "quality_governor=tasks/TASK-PROBLEM-QUALITY.yaml", "--write",
+        )
+        self.assertEqual(changed_signal.returncode, 2, changed_signal.stdout)
+        self.assertIn("signals do not match", changed_signal.stdout)
+        quality_advanced = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--completed-role", "quality_governor",
+            "--completed-task", "quality_governor=tasks/TASK-PROBLEM-QUALITY.yaml", "--write",
+        )
+        self.assertEqual(quality_advanced.returncode, 0, quality_advanced.stdout)
+        final_plan = json.loads((self.root / ".codex/orchestration/role-plan.json").read_text(encoding="utf-8"))
+        self.assertEqual(final_plan["required_now"], [])
+        self.assertEqual(final_plan["completed_roles"], ["quality_governor", "requirements"])
+        self.assertEqual(final_plan["routing_cycle_id"], cycle_id)
+        stable = run(
+            "route_roles.py", self.root, "--stage", "DISCOVERY", "--quota", "balanced",
+            "--signal", "high_impact", "--write",
+        )
+        self.assertEqual(stable.returncode, 0, stable.stdout)
+        stable_plan = json.loads((self.root / ".codex/orchestration/role-plan.json").read_text(encoding="utf-8"))
+        self.assertEqual(stable_plan["required_now"], [])
+        self.assertEqual(stable_plan["completed_roles"], ["quality_governor", "requirements"])
 
     def test_runtime_availability_is_persisted_and_high_risk_blocks(self) -> None:
         created = run(

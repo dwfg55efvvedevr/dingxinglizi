@@ -1,6 +1,6 @@
 # Software Project Orchestrator — usage
 
-This folder is a complete reusable Codex Skill. It creates durable project memory, selects a Simple/Standard/Complex role set, routes each Task Package to Luna/Terra/Sol with an explicit reasoning effort, prepares trusted capabilities, enforces pre-build matrices, routes defects to their source, and requires independent QA evidence before completion.
+This folder is a complete reusable Codex Skill. It creates durable project memory, routes only the current gate's minimum role set, routes each Task Package to Luna/Terra/Sol, prepares trusted capabilities, enforces product and quality gates, routes defects to their source, and requires independent QA evidence before completion.
 
 The architecture is deliberately separated:
 
@@ -17,6 +17,14 @@ The generated project also contains `.codex/orchestration/`: versioned model pol
 ## Install or place the Skill
 
 Choose one scope. Copy or symlink the whole `software-project-orchestrator` folder; do not copy only `SKILL.md`.
+
+Direct GitHub install:
+
+```bash
+mkdir -p ~/.agents/skills
+git clone https://github.com/dwfg55efvvedevr/software-project-orchestrator.git \
+  ~/.agents/skills/software-project-orchestrator
+```
 
 - Personal, available across projects: `$HOME/.agents/skills/software-project-orchestrator/`
 - Repository-specific: `<repository>/.agents/skills/software-project-orchestrator/`
@@ -62,7 +70,7 @@ Initialization creates:
 
 - the stable `AGENTS.md` contract;
 - `docs/00` through `docs/10`, the completeness checklist, status JSON, and decision template;
-- `.codex/agents/` with the 8 baseline roles and 5 optional Worker profiles;
+- `.codex/agents/` with the baseline roles, on-demand Quality Governor, and 5 optional Worker profiles;
 - task and evidence templates.
 
 ## Inject business background
@@ -80,11 +88,26 @@ Use fact states exactly as defined in the templates. `BLOCKING_UNKNOWN` is hones
 
 ## Choose or change the Agent team
 
-All role profiles are installed so they are available, but they are not all started for every project.
+All role profiles are installed so they are available. A file on disk is not an active Agent and does not itself spend a subagent call. Orchestrator remains in the main thread.
 
 - `Simple`: Orchestrator, a merged Requirements/Product Lead, Engineering Lead, independent QA. Add UX/UI or Architect only when the work needs them.
 - `Standard`: Orchestrator, Requirements, Product Auditor, Design Lead (UX/UI may merge), Technical Lead (Architect/Engineering may merge when moderate risk), independent QA.
-- `Complex`: all eight baseline roles, plus only the specialists needed by concrete work packages.
+- `Complex`: all professional responsibilities are available across the lifecycle, but the current role plan still activates only the current gate's minimum role wave.
+
+Preview a zero-spawn plan, then persist it before creating a governed Task Package:
+
+```bash
+python3 scripts/route_roles.py /path/to/project --stage DISCOVERY --quota economy
+python3 scripts/route_roles.py /path/to/project --stage DISCOVERY --quota economy --write
+```
+
+`economy` allows one active subagent. `balanced` and `quality_first` allow up to two only for explicitly parallel-safe independent read-only work. Reviewers are deferred until owner handoff, and approved quality work is reused while its input fingerprint is unchanged.
+
+`required_now` is only the first unfinished wave; `deferred_sequence` is not launch permission. After a role persists a successful handoff with artifacts/evidence, mark that package `COMPLETED`, close the session, and re-route the same stage with `--completed-role ROLE --completed-task ROLE=tasks/TASK.yaml --write`. The router verifies the package against the prior plan before the next unfinished wave becomes current. Writing the plan also synchronizes the quota mode and maximum active count in project status; reducing the quota is rejected until excess sessions exit.
+
+Verified completions accumulate within one `routing_cycle_id`, so finishing wave two clears a two-wave gate instead of restarting wave one. A completion claim must preserve the current stage, complexity, quota, and normalized signals. A deliberate change to those routing inputs begins a new cycle and clears old completion claims.
+
+The Skill can deterministically prevent unnecessary dispatches; it cannot read, reserve, or guarantee the host account's remaining quota. Actual usage is controlled by the Codex runtime and the tasks that are launched.
 
 Runtime IDs use underscores: `product_auditor` and `engineering_lead`. Human-facing documents may use Product Auditor and Engineering Lead. Do not create duplicate identities with hyphenated IDs.
 
@@ -145,15 +168,18 @@ Use a fresh Agent session after provisioning and verify the runtime actually exp
 
 Before dispatch, enforce both route integrity and capability readiness:
 
+Task generation intentionally stops at `status: DRAFT`. Fill a concrete business context, existing project input documents, non-empty scope and deliverables, observable `AC-*` Given/When/Then/evidence, bounded `allowed_files` for writers, and at least one validation command or manual check. Quality Governor packages also require the independent quality-review fields. Orchestrator reviews the contract and changes the top-level status to `READY_FOR_DISPATCH`; do not change generated route fields. The preflight below returns `BLOCKED_TASK_CONTRACT` for anything still incomplete.
+
 ```bash
 python3 scripts/check_execution_plan.py /path/to/project \
   tasks/TASK-001.yaml \
+  --record-ready \
   --available-model gpt-5.6-luna \
   --available-model gpt-5.6-terra \
   --available-model gpt-5.6-sol
 ```
 
-Only `READY` permits Orchestrator to spawn the Agent. The launch must explicitly use the task's model and reasoning effort; a mismatch is blocking evidence, not a warning.
+Only `READY` plus the recorded `evidence/dispatch/TASK-ID.ready.json` receipt permits Orchestrator to spawn the Agent. Blocked runtime inventory, unavailable model, missing capability, role mismatch, or stage failure never creates a receipt and therefore cannot later claim completion. The launch must explicitly use the task's model and reasoning effort; a mismatch is blocking evidence, not a warning.
 
 ## Run gates
 

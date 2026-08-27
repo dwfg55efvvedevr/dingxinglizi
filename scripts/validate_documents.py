@@ -32,6 +32,9 @@ REQUIRED_HEADINGS = {
     "docs/08-system-design.md": ["# System design", "## Deployment, migration, compatibility, and rollback"],
     "docs/09-api-data-contract.md": ["# API and data contract", "## APIs and events", "## Data models"],
     "docs/10-test-plan.md": ["# Test and acceptance plan", "## Acceptance matrix", "## Independent QA conclusion"],
+    "docs/checklists/problem-quality.md": ["# Problem quality review", "## Claims and evidence", "## Decision"],
+    "docs/checklists/solution-challenge.md": ["# Solution challenge", "## Solution logic", "## Decision"],
+    "docs/checklists/quality-case.md": ["# Release quality case", "## Claim-evidence map", "## Decision"],
 }
 
 
@@ -42,6 +45,8 @@ def check(root) -> tuple[list[str], list[str]]:
         errors.append("AGENTS.md is missing")
     for relative in (
         ".codex/orchestration/model-routing-policy.json",
+        ".codex/orchestration/role-routing-policy.json",
+        ".codex/orchestration/role-plan.json",
         ".codex/orchestration/capability-policy.json",
         ".codex/orchestration/capability-catalog.json",
         ".codex/orchestration/capability-lock.json",
@@ -57,6 +62,12 @@ def check(root) -> tuple[list[str], list[str]]:
                 from model_routing import validate_model_policy
 
                 validate_model_policy(content)
+            if relative.endswith("role-routing-policy.json"):
+                from role_routing import validate_role_policy
+
+                validate_role_policy(content)
+            if relative.endswith("role-plan.json") and content.get("status") not in {"NOT_ROUTED", "ROUTED"}:
+                errors.append(f"{relative}: status must be NOT_ROUTED or ROUTED")
             if relative.endswith("runtime-inventory.json"):
                 if content.get("status") not in {"UNVERIFIED", "VERIFIED"}:
                     errors.append(f"{relative}: status must be UNVERIFIED or VERIFIED")
@@ -99,13 +110,59 @@ def check(root) -> tuple[list[str], list[str]]:
             if status.get("complexity") not in {"Simple", "Standard", "Complex"}:
                 errors.append("docs/project-status.json: complexity must be Simple, Standard, or Complex")
             execution = status.get("execution_control", {})
-            if execution.get("model_routing_policy") != "1.1.0":
-                errors.append("docs/project-status.json: model_routing_policy must be 1.1.0")
+            if execution.get("model_routing_policy") != "1.2.0":
+                errors.append("docs/project-status.json: model_routing_policy must be 1.2.0")
+            if execution.get("role_routing_policy") != "1.2.0":
+                errors.append("docs/project-status.json: role_routing_policy must be 1.2.0")
             if execution.get("capability_policy") != "1.1.0":
                 errors.append("docs/project-status.json: capability_policy must be 1.1.0")
+            if execution.get("quota_mode") not in {"economy", "balanced", "quality_first"}:
+                errors.append("docs/project-status.json: quota_mode must be economy, balanced, or quality_first")
+            expected_maximum = {"economy": 1, "balanced": 2, "quality_first": 2}.get(execution.get("quota_mode"))
+            if expected_maximum is not None and execution.get("max_active_subagents") != expected_maximum:
+                errors.append(
+                    "docs/project-status.json: max_active_subagents must match quota_mode "
+                    f"({execution.get('quota_mode')}={expected_maximum})"
+                )
+            sessions = execution.get("active_sessions")
+            if not isinstance(sessions, list):
+                errors.append("docs/project-status.json: active_sessions must be a list")
+            else:
+                if any(item.get("role") == "orchestrator" for item in sessions if isinstance(item, dict)):
+                    errors.append("docs/project-status.json: orchestrator must remain in the main thread")
+                maximum = execution.get("max_active_subagents")
+                if not isinstance(maximum, int) or maximum not in {1, 2}:
+                    errors.append("docs/project-status.json: max_active_subagents must be 1 or 2")
+                elif len(sessions) > maximum:
+                    errors.append("docs/project-status.json: active_sessions exceeds max_active_subagents")
+                workers = {"frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"}
+                for session in sessions:
+                    if not isinstance(session, dict):
+                        errors.append("docs/project-status.json: every active session must be an object")
+                        continue
+                    expected_parent = "engineering_lead" if session.get("role") in workers else "orchestrator"
+                    if session.get("parent_role") != expected_parent:
+                        errors.append(
+                            f"docs/project-status.json: active role {session.get('role')} parent_role must be {expected_parent}"
+                        )
+                active_roles = {item.get("role") for item in sessions if isinstance(item, dict)}
+                role_values = [item.get("role") for item in sessions if isinstance(item, dict)]
+                duplicate_roles = sorted({role for role in role_values if role and role_values.count(role) > 1})
+                if duplicate_roles:
+                    errors.append(
+                        "docs/project-status.json: duplicate active role sessions are not allowed: "
+                        + ", ".join(duplicate_roles)
+                    )
+                if active_roles & workers and "engineering_lead" not in active_roles:
+                    errors.append("docs/project-status.json: active Worker requires an active Engineering Lead")
+                if {"engineering_lead", "qa"}.issubset(active_roles):
+                    errors.append("docs/project-status.json: Engineering Lead and final QA cannot be active together")
             for gate in ("requirements", "product", "ux", "ui", "architecture", "build", "qa", "release"):
                 if gate not in status.get("gates", {}):
                     errors.append(f"docs/project-status.json: missing gate '{gate}'")
+            for gate in ("problem", "solution", "release_evidence"):
+                if gate not in status.get("quality_gates", {}):
+                    errors.append(f"docs/project-status.json: missing quality gate '{gate}'")
     shared = root / ".codex" / "agents" / "shared-rules.md"
     if not shared.is_file():
         errors.append(".codex/agents/shared-rules.md is missing")

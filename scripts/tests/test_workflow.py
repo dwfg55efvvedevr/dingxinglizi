@@ -12,6 +12,9 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+sys.path.insert(0, str(SCRIPTS))
+
+from route_roles import source_fingerprint  # noqa: E402
 
 
 def run(script: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -32,6 +35,21 @@ def add_row(path: Path, header_starts: str, row: str) -> None:
             path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             return
     raise AssertionError(f"Table header not found in {path}: {header_starts}")
+
+
+def make_task_ready(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    text = text.replace('status: "DRAFT"', 'status: "READY_FOR_DISPATCH"', 1)
+    text = text.replace('  value: "BLOCKING_UNKNOWN"', '  value: "Approved implementation value"', 1)
+    text = text.replace('scope: []', 'scope:\n  - "Implement the bounded worker module"', 1)
+    text = text.replace('deliverables: []', 'deliverables:\n  - "Tested worker module"', 1)
+    text = text.replace('allowed_files: []', 'allowed_files:\n  - "src/worker-module.ts"', 1)
+    text = text.replace('    given: "BLOCKING_UNKNOWN"', '    given: "Approved contracts exist"', 1)
+    text = text.replace('    when: "BLOCKING_UNKNOWN"', '    when: "The worker implements the module"', 1)
+    text = text.replace('    then: "BLOCKING_UNKNOWN"', '    then: "The module passes its contract"', 1)
+    text = text.replace('    evidence: "BLOCKING_UNKNOWN"', '    evidence: "evidence/worker-result.txt"', 1)
+    text = text.replace('  commands: []', '  commands:\n    - "python3 --version"', 1)
+    path.write_text(text, encoding="utf-8")
 
 
 def approve_for_build(root: Path) -> None:
@@ -83,6 +101,11 @@ def approve_for_build(root: Path) -> None:
     text = text.replace("- Conclusion: BLOCKED", "- Conclusion: PASS")
     test_plan.write_text(text, encoding="utf-8")
 
+    for name in ("problem-quality.md", "solution-challenge.md", "quality-case.md"):
+        quality_path = root / "docs/checklists" / name
+        quality_text = quality_path.read_text(encoding="utf-8").replace("- Conclusion: BLOCKED", "- Conclusion: PASS")
+        quality_path.write_text(quality_text, encoding="utf-8")
+
     checklist = root / "docs/checklists/product-completeness.md"
     lines = checklist.read_text(encoding="utf-8").splitlines()
     for index, line in enumerate(lines):
@@ -109,6 +132,18 @@ def approve_for_build(root: Path) -> None:
     }
     for gate in ("requirements", "product", "ux", "ui", "architecture"):
         status["gates"][gate] = {"status": "APPROVED", "version": "1.0.0", "evidence": [evidence[gate]]}
+    quality_evidence = {
+        "problem": "docs/checklists/problem-quality.md",
+        "solution": "docs/checklists/solution-challenge.md",
+        "release_evidence": "docs/checklists/quality-case.md",
+    }
+    quality_stage = {"problem": "DISCOVERY", "solution": "READY_FOR_BUILD", "release_evidence": "QA_PASS"}
+    for gate, path in quality_evidence.items():
+        status["quality_gates"][gate] = {
+            "status": "APPROVED", "mode": "INLINE", "reviewer": "orchestrator",
+            "session": None, "version": "1.0.0", "input_fingerprint": source_fingerprint(root, quality_stage[gate]),
+            "evidence": [path],
+        }
     status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
 
 
@@ -228,6 +263,125 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(invalid_return.returncode, 2)
 
+    def test_balanced_engineering_can_delegate_one_governed_worker(self) -> None:
+        approve_for_build(self.root)
+        status_path = self.root / "docs/project-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["current_state"] = "READY_FOR_BUILD"
+        status["previous_state"] = "ARCHITECTURE_READY"
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        routed = run(
+            "route_roles.py", self.root, "--stage", "IN_DEVELOPMENT", "--quota", "balanced",
+            "--signal", "implementation_workers", "--write",
+        )
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        plan = json.loads((self.root / ".codex/orchestration/role-plan.json").read_text(encoding="utf-8"))
+        self.assertIn("frontend_worker", plan["delegable_workers"])
+        self.assertEqual(plan["max_concurrent_workers"], 1)
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        self.assertEqual(status["execution_control"]["quota_mode"], "balanced")
+        self.assertEqual(status["execution_control"]["max_active_subagents"], 2)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-WORKER-1",
+            "--owner", "frontend_worker", "--reviewer", "engineering_lead",
+            "--return-to", "engineering_lead", "--stage", "IN_DEVELOPMENT",
+            "--objective", "Implement the approved frontend module", "--task-type", "implementation",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        make_task_ready(self.root / "tasks/TASK-WORKER-1.yaml")
+        missing_parent = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-WORKER-1.yaml",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(missing_parent.returncode, 3, missing_parent.stdout)
+        self.assertIn("BLOCKED_WORKER_PARENT", missing_parent.stdout)
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["execution_control"]["active_sessions"] = [{
+            "session_id": "eng-session-1", "task_id": "TASK-ENGINEERING-1",
+            "role": "engineering_lead", "parent_role": "orchestrator", "access_mode": "write",
+        }]
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        duplicate_engineering = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-ENGINEERING-2",
+            "--owner", "engineering_lead", "--reviewer", "qa", "--stage", "IN_DEVELOPMENT",
+            "--objective", "Attempt a duplicate engineering session", "--task-type", "implementation",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(duplicate_engineering.returncode, 0, duplicate_engineering.stdout)
+        make_task_ready(self.root / "tasks/TASK-ENGINEERING-2.yaml")
+        duplicate_blocked = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-ENGINEERING-2.yaml",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(duplicate_blocked.returncode, 3, duplicate_blocked.stdout)
+        self.assertIn("BLOCKED_DUPLICATE_ROLE", duplicate_blocked.stdout)
+        ready = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-WORKER-1.yaml",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(ready.returncode, 0, ready.stdout)
+
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["execution_control"]["active_sessions"].append({
+            "session_id": "worker-session-1", "task_id": "TASK-WORKER-OTHER",
+            "role": "backend_worker", "parent_role": "engineering_lead", "access_mode": "write",
+        })
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        no_third_slot = run(
+            "check_execution_plan.py", self.root, "tasks/TASK-WORKER-1.yaml",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(no_third_slot.returncode, 3, no_third_slot.stdout)
+        self.assertIn("no subagent slot", no_third_slot.stdout)
+        refused_downgrade = run(
+            "route_roles.py", self.root, "--stage", "IN_DEVELOPMENT", "--quota", "economy",
+            "--signal", "implementation_workers", "--write",
+        )
+        self.assertEqual(refused_downgrade.returncode, 2, refused_downgrade.stdout)
+        status_after_refusal = json.loads(status_path.read_text(encoding="utf-8"))
+        plan_after_refusal = json.loads(
+            (self.root / ".codex/orchestration/role-plan.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(status_after_refusal["execution_control"]["quota_mode"], "balanced")
+        self.assertEqual(plan_after_refusal["quota_mode"], "balanced")
+        status["execution_control"]["active_sessions"] = status["execution_control"]["active_sessions"][:1]
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+
+        economy = run(
+            "route_roles.py", self.root, "--stage", "IN_DEVELOPMENT", "--quota", "economy",
+            "--signal", "implementation_workers", "--write",
+        )
+        self.assertEqual(economy.returncode, 0, economy.stdout)
+        rejected = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-WORKER-2",
+            "--owner", "backend_worker", "--reviewer", "engineering_lead",
+            "--return-to", "engineering_lead", "--stage", "IN_DEVELOPMENT",
+            "--objective", "Must stay within economy budget", "--task-type", "implementation",
+        )
+        self.assertEqual(rejected.returncode, 2, rejected.stdout)
+        self.assertIn("not required_now or delegable", rejected.stdout)
+
+    def test_active_worker_cannot_be_orphaned(self) -> None:
+        status_path = self.root / "docs/project-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["execution_control"]["quota_mode"] = "balanced"
+        status["execution_control"]["max_active_subagents"] = 2
+        status["execution_control"]["active_sessions"] = [{
+            "session_id": "worker-session-orphan", "task_id": "TASK-WORKER-ORPHAN",
+            "role": "frontend_worker", "parent_role": "engineering_lead", "access_mode": "write",
+        }]
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        result = run("validate_documents.py", self.root)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("active Worker requires an active Engineering Lead", result.stdout)
+
     def test_project_name_is_json_safe_and_blank_input_fails(self) -> None:
         second = Path(self.temp.name) / "quoted"
         quoted = run(
@@ -257,6 +411,41 @@ class WorkflowTests(unittest.TestCase):
         approve_for_build(self.root)
         result = run("check_project_status.py", self.root, "--target", "READY_FOR_BUILD")
         self.assertEqual(result.returncode, 0, result.stdout)
+
+    def test_quality_subgates_block_their_transitions(self) -> None:
+        approve_for_build(self.root)
+        status_path = self.root / "docs/project-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["current_state"] = "DISCOVERY"
+        status["previous_state"] = "BACKLOG"
+        status["quality_gates"]["problem"]["status"] = "PENDING"
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        problem = run("check_project_status.py", self.root, "--target", "REQUIREMENTS_APPROVED")
+        self.assertEqual(problem.returncode, 1, problem.stdout)
+        self.assertIn("Quality gate 'problem' must be APPROVED", problem.stdout)
+
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["current_state"] = "ARCHITECTURE_READY"
+        status["previous_state"] = "UI_READY"
+        status["quality_gates"]["problem"] = {
+            "status": "APPROVED", "mode": "INLINE", "reviewer": "orchestrator", "session": None,
+            "version": "1.0.0", "input_fingerprint": "a" * 64,
+            "evidence": ["docs/checklists/problem-quality.md"],
+        }
+        status["quality_gates"]["solution"]["status"] = "PENDING"
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        solution = run("check_project_status.py", self.root, "--target", "READY_FOR_BUILD")
+        self.assertEqual(solution.returncode, 1, solution.stdout)
+        self.assertIn("Quality gate 'solution' must be APPROVED", solution.stdout)
+
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["current_state"] = "QA_PASS"
+        status["previous_state"] = "READY_FOR_QA"
+        status["quality_gates"]["release_evidence"]["status"] = "PENDING"
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        release = run("check_project_status.py", self.root, "--target", "RELEASE_READY")
+        self.assertEqual(release.returncode, 1, release.stdout)
+        self.assertIn("Quality gate 'release_evidence' must be APPROVED", release.stdout)
 
     def test_build_gate_rejects_unknowns_and_fake_evidence(self) -> None:
         approve_for_build(self.root)
@@ -386,6 +575,7 @@ class WorkflowTests(unittest.TestCase):
         status["current_state"] = "QA_PASS"
         status["previous_state"] = "READY_FOR_QA"
         status["gates"]["release"] = {"status": "APPROVED", "version": "1.0.0", "evidence": ["docs/10-test-plan.md"]}
+        status["quality_gates"]["release_evidence"]["input_fingerprint"] = source_fingerprint(self.root, "QA_PASS")
         status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
         release = run("check_project_status.py", self.root, "--target", "RELEASE_READY")
         self.assertEqual(release.returncode, 0, release.stdout)

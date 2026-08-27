@@ -9,17 +9,21 @@
 ## Delivery hierarchy
 
 - One Orchestrator owns global routing, state, gates, conflicts, task packages, and final synthesis.
+- Orchestrator runs in the main thread; do not spawn a second Orchestrator. Installed role profiles are available capabilities, not active sessions.
+- Before delegation, generate the current-gate role plan. Spawn only `required_now`, and defer the reviewer until owner handoff. A completed owner records artifacts/evidence in its Task Package, marks it `COMPLETED`, and exits; advance only by passing that package as verified handoff proof to the router. Default to one active subagent; allow two only for a generated two-role read-only wave or Engineering Lead plus one governed Worker. Never open two tasks for the same active role.
 - Only Orchestrator may coordinate all professional Agents. Engineering Lead may coordinate only temporary frontend/backend/AI/data/test Workers. Workers may not create Agents.
 - Requirements maintains business facts but is not their private holder. All roles consume project documents.
 - Engineering Lead and final QA must be separate Agents or sessions. Development self-tests do not equal acceptance.
 - One writer owns each shared mutable file at a time. Work only within the current task package's allowed files.
 - Models and reasoning effort are routed per Task Package. Role TOML files do not bind a permanent model. Orchestrator must spawn with the resolved explicit route; other Agents may not override it.
+- A role may start only after the full execution preflight records a matching dispatch READY receipt. Completion and next-wave routing require that receipt; a blocked runtime, model, capability, role, stage, or Task Contract cannot be relabeled as completed.
 - Agents declare capability requirements, but only Orchestrator may discover, approve, download, lock, install, authenticate, or configure Skills/MCP. Workers may not provision capabilities.
 
 ## Hard gates
 
 - Do not start development while P0/P1 business unknowns remain or required scope is incomplete.
 - Do not enter `READY_FOR_BUILD` without approved role-page, page-feature, feature-state, front-office/back-office, permission, and acceptance matrices.
+- Do not approve Requirements, Build, or Release readiness without the Problem Quality, Solution Challenge, or Release Evidence checklist respectively. Use an independent Quality Governor only when the role router requires it.
 - Do not enter `QA_PASS` or `DONE` without independent QA evidence and disposition of all blocking defects/risks.
 - Do not change scope, rules, UX behavior, architecture contracts, permissions, dependencies, or acceptance silently. Route the change to its owner and record the decision.
 

@@ -8,7 +8,7 @@ import json
 from typing import Any, Iterable
 
 
-POLICY_VERSION = "1.1.0"
+POLICY_VERSION = "1.2.0"
 MODELS = {
     "Economy": ("gpt-5.6-luna", "low"),
     "Standard": ("gpt-5.6-terra", "medium"),
@@ -19,7 +19,10 @@ MODELS = {
 TIER_ORDER = list(MODELS)
 
 LOW_RISK_TASKS = {"scan", "extract", "format", "documentation", "test_run"}
-ADVANCED_TASKS = {"requirements", "product_audit", "ux", "ui", "implementation", "code_review", "qa"}
+ADVANCED_TASKS = {
+    "requirements", "product_audit", "ux", "ui", "implementation", "code_review", "qa",
+    "problem_quality", "solution_challenge", "release_quality",
+}
 EXPERT_TASKS = {"architecture", "security_review", "permission_design", "migration_design", "release_review"}
 KNOWN_TASK_TYPES = LOW_RISK_TASKS | ADVANCED_TASKS | EXPERT_TASKS
 HIGH_RISK_FLAGS = {
@@ -35,6 +38,7 @@ KNOWN_RISK_FLAGS = HIGH_RISK_FLAGS | {
 KNOWN_ROLES = {
     "orchestrator", "requirements", "product_auditor", "ux", "ui", "architect",
     "engineering_lead", "qa", "frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker",
+    "quality_governor",
 }
 ROLE_FLOORS = {
     "orchestrator": {"Simple": "Standard", "Standard": "Advanced", "Complex": "Expert"},
@@ -45,6 +49,7 @@ ROLE_FLOORS = {
     "architect": {"Simple": "Advanced", "Standard": "Advanced", "Complex": "Expert"},
     "engineering_lead": {"Simple": "Standard", "Standard": "Advanced", "Complex": "Expert"},
     "qa": {"Simple": "Advanced", "Standard": "Advanced", "Complex": "Expert"},
+    "quality_governor": {"Simple": "Advanced", "Standard": "Advanced", "Complex": "Expert"},
 }
 
 
@@ -244,5 +249,5 @@ def validate_model_policy(policy: dict[str, Any]) -> None:
     }
     if policy != expected:
         raise ValueError(
-            "model-routing-policy.json does not match the executable router policy version 1.1.0"
+            "model-routing-policy.json does not match the executable router policy version 1.2.0"
         )

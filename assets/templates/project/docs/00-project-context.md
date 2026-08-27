@@ -22,6 +22,18 @@ source_of_truth: project-document-set
 - Who experiences it: BLOCKING_UNKNOWN
 - Current workaround/cost: BLOCKING_UNKNOWN
 - Why now: BLOCKING_UNKNOWN
+- Observable evidence and baseline: BLOCKING_UNKNOWN
+- Root cause / causal mechanism: BLOCKING_UNKNOWN
+- Strongest alternative, including no action: BLOCKING_UNKNOWN
+- Adoption and switching friction: BLOCKING_UNKNOWN
+
+## Product thesis and falsifiers
+
+- Expected user/operational behavior change: BLOCKING_UNKNOWN
+- Smallest valuable and reversible test: BLOCKING_UNKNOWN
+- Critical assumptions: BLOCKING_UNKNOWN
+- Evidence that would falsify or stop the initiative: BLOCKING_UNKNOWN
+- Potential harm, exclusion, misuse, or perverse incentive: BLOCKING_UNKNOWN
 
 ## Business model and value exchange
 
@@ -104,11 +116,17 @@ source_of_truth: project-document-set
 | Metric | Baseline | Target | Measurement | Decision owner | Fact state |
 |---|---|---|---|---|---|
 
-## Complexity and active team
+- Primary outcome metric: BLOCKING_UNKNOWN
+- Guardrail metrics and stop thresholds: BLOCKING_UNKNOWN
+- Post-release learning owner/timepoint: BLOCKING_UNKNOWN
+
+## Complexity and role availability
 
 - Level: {{COMPLEXITY}}
 - Evidence: BLOCKING_UNKNOWN
-- Active professional roles: BLOCKING_UNKNOWN
+- Current role plan: `.codex/orchestration/role-plan.json`
+- Quota mode: economy
+- Installed professional role profiles: AVAILABLE_NOT_ACTIVE
 - Temporary specialists/Workers: NOT_APPLICABLE
 - Independent QA: REQUIRED
 

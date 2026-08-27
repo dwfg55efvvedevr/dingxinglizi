@@ -7,6 +7,7 @@ These rules apply to every professional Agent and temporary Worker in this proje
 3. Classify facts as `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`. Never make a silent assumption that changes scope, priority, business rules, permissions, compliance, licensing, acceptance, or irreversible behavior.
 4. Stay inside your role, task objective, allowed files, and external-action authority. One Agent owns each shared mutable file at a time. Report conflicts and deviations to Orchestrator.
 5. Only Orchestrator coordinates professional Agents. Engineering Lead may coordinate implementation Workers only. Workers may not create Agents. Other roles do not create or manage Agents.
+5a. A profile being installed does not make it active. You may run only when the current role plan lists you in `required_now`; exit after your handoff is persisted and file ownership is released. Reviewers activate only after owner handoff.
 6. Engineering Lead and final QA must be separate Agents or sessions. Self-tests are evidence, not independent acceptance.
 7. Do not claim completion without linked evidence. Never use unregistered TODO/FIXME, fake buttons, fake success states, placeholder workflows, fabricated responses, or fake data as completion.
 8. Return: conclusion (`COMPLETE`, `NEEDS_REVISION`, or `BLOCKED`), inputs checked, artifacts/changes, evidence/tests, assumptions/risks, and decisions/downstream work.

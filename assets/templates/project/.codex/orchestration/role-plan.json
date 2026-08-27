@@ -1,0 +1,17 @@
+{
+  "policy_version": "1.2.0",
+  "status": "NOT_ROUTED",
+  "generated_at": null,
+  "current_stage": "BACKLOG",
+  "routing_cycle_id": null,
+  "quota_mode": "economy",
+  "active_subagents": [],
+  "current_wave": 0,
+  "planned_roles": [],
+  "deferred_sequence": [],
+  "completed_roles": [],
+  "delegable_workers": [],
+  "worker_parent": "engineering_lead",
+  "max_concurrent_workers": 0,
+  "plan_fingerprint": null
+}

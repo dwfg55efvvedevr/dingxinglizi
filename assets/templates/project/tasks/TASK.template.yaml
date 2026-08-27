@@ -10,12 +10,21 @@ may_spawn_workers: false
 priority: "P2"
 objective: "BLOCKING_UNKNOWN"
 task_type: "BLOCKING_UNKNOWN"
+role_execution:
+  policy_version: "1.2.0"
+  role_plan_fingerprint: "NOT_ROUTED"
+  status: "NOT_ROUTED"
+  quota_mode: "economy"
+  activation_reasons: []
+  merged_responsibilities: []
+  reviewer_activation: "deferred_until_owner_handoff"
+  concurrency_slot: 1
 risk_profile:
   flags: []
   failed_attempts: 0
   failure_type: "none"
 execution_profile:
-  policy_version: "1.1.0"
+  policy_version: "1.2.0"
   route_fingerprint: "BLOCKING_UNKNOWN"
   routing_mode: "explicit_spawn_override"
   availability_source: "BLOCKING_UNKNOWN"
@@ -32,6 +41,14 @@ execution_profile:
   max_attempts: 3
   downgrade_policy: "new_low_risk_task_package_only"
   escalation_history: []
+quality_review:
+  gate: "NOT_APPLICABLE"
+  review_mode: "NOT_APPLICABLE"
+  decision_question: "BLOCKING_UNKNOWN"
+  input_fingerprint: "BLOCKING_UNKNOWN"
+  selected_lenses: []
+  adversarial_tests: []
+  quality_case_ref: "BLOCKING_UNKNOWN"
 capability_requirements:
   required: []
   optional: []

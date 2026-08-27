@@ -12,6 +12,9 @@ All roles begin by reading the effective `AGENTS.md`, project status, current ta
 | Architect | boundaries, state machines, data/API/permissions, consistency, logging, deployment and ADRs | implement the whole feature; change product scope without routing it back |
 | Engineering Lead | implementation decomposition, Worker ownership, integration, code review, tests and change record | self-approve final QA; let Workers delegate; change approved contracts silently |
 | QA | independent acceptance, regression, evidence, defect routing and final QA conclusion | modify business code; infer intended behavior from implementation; accept unrecorded risk |
+| Quality Governor | read-only first-principles challenge of problem validity, solution logic, assumptions, falsifiers, alternatives, harms, and release claims | manage Agents; own facts; implement; approve intent; accept risk; replace Product Auditor or QA |
+
+Product Auditor asks whether required product coverage is missing. QA asks whether implementation conforms to the approved baseline. Quality Governor asks whether the baseline and claimed evidence are worth believing. These responsibilities must not collapse into one vague “quality” owner.
 
 ## Temporary Workers
 
@@ -29,7 +32,8 @@ User
       ├─ Architect
       ├─ Engineering Lead
       │   └─ bounded implementation Workers
-      └─ QA
+      ├─ QA
+      └─ Quality Governor (on demand only)
 ```
 
-Professional roles do not manage one another. They return conflicts to Orchestrator, who resolves them using document precedence and records material decisions.
+Professional roles do not manage one another. They return conflicts to Orchestrator, who resolves them using document precedence and records material decisions. All profiles may be installed while the current role plan activates only the current gate's smallest set.

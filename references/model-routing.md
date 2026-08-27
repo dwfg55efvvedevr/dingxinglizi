@@ -17,7 +17,7 @@ python3 scripts/route_task.py \
   --risk migration
 ```
 
-Supported task types are `scan`, `extract`, `format`, `documentation`, `test_run`, `requirements`, `product_audit`, `ux`, `ui`, `implementation`, `code_review`, `qa`, `architecture`, `security_review`, `permission_design`, `migration_design`, and `release_review`. Unknown task or risk names fail closed instead of silently receiving a cheaper route.
+Supported task types are `scan`, `extract`, `format`, `documentation`, `test_run`, `requirements`, `product_audit`, `ux`, `ui`, `implementation`, `code_review`, `qa`, `problem_quality`, `solution_challenge`, `release_quality`, `architecture`, `security_review`, `permission_design`, `migration_design`, and `release_review`. Unknown task or risk names fail closed instead of silently receiving a cheaper route.
 
 The composition rule takes the highest requirement from role, project complexity, task type, and hard risk flags. The complete result receives a SHA-256 `route_fingerprint`; launch preflight recomputes it and compares every launch-critical field so inheritance, attempts, fallback or reasoning policy cannot be silently changed.
 
@@ -38,6 +38,7 @@ Role floors prevent a high-impact coordinator or reviewer from being routed like
 | Architect | Terra high | Terra high | Sol high |
 | Engineering Lead | Terra medium | Terra high | Sol high |
 | Independent QA | Terra high | Terra high | Sol high |
+| Quality Governor | Terra high | Terra high | Sol high |
 | Temporary Worker | Luna for mechanical tasks; task/risk rules may raise it | Luna/Terra | Terra or Sol when risk requires |
 
 These are floors, not permanent role bindings. Hard risk flags and repeated valid quality failure may raise them.

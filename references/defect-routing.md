@@ -12,6 +12,8 @@ Route a defect to the earliest responsibility source that can correct the cause.
 | implementation, integration, regression, build, or developer test failure | Engineering Lead | `REWORK_ENGINEERING` |
 | missing/invalid test, fixture, evidence, coverage or QA procedure | QA | `REWORK_QA` |
 
+Quality Governor owns no rework state. Its challenge routes to the earliest row above: problem/value/fact/assumption to Requirements; completeness to Product Auditor; flow to UX; hierarchy/copy/accessibility to UI; contracts/reversibility/security to Architect; implementation to Engineering Lead; test/evidence sufficiency to QA. Use `BLOCKED` when the missing item is decision authority rather than a correctable artifact.
+
 Each defect record includes ID, severity P0–P3, failed criterion, environment/preconditions, reproduction, expected/actual, evidence, source owner, contributors, affected artifacts, correction required, re-entry gate, retest and regression range.
 
 QA reports `PASS`, `PASS_WITH_ACCEPTED_RISKS`, `FAIL`, or `BLOCKED`. Only an authorized decision owner may accept a material risk; QA records but does not invent that acceptance. P0/P1 defects and unaccepted risks block `QA_PASS`.
