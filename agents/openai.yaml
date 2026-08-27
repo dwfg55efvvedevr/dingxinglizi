@@ -1,4 +1,4 @@
 interface:
-  display_name: "Software Project Orchestrator"
+  display_name: "dingxinglizi"
   short_description: "On-demand roles for evidence-based software delivery"
   default_prompt: "Use $software-project-orchestrator to route only the current stage's minimum roles and deliver this project with independent QA."

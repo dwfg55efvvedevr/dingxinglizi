@@ -1,6 +1,6 @@
-# Software Project Orchestrator — usage
+# dingxinglizi — usage
 
-This folder is a complete reusable Codex Skill. It creates durable project memory, routes only the current gate's minimum role set, routes each Task Package to Luna/Terra/Sol, prepares trusted capabilities, enforces product and quality gates, routes defects to their source, and requires independent QA evidence before completion.
+`dingxinglizi` is a complete reusable Codex Skill whose stable invocation name is `$software-project-orchestrator`. It creates durable project memory, routes only the current gate's minimum role set, routes each Task Package to Luna/Terra/Sol, prepares trusted capabilities, enforces product and quality gates, routes defects to their source, and requires independent QA evidence before completion.
 
 The architecture is deliberately separated:
 

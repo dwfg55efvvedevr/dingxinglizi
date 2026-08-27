@@ -1,10 +1,12 @@
-# Software Project Orchestrator
+# dingxinglizi
+
+> Codex Software Project Orchestrator
 
 [中文](#中文介绍) · [English](#english)
 
 ## 中文介绍
 
-`software-project-orchestrator` 是一套面向 Codex 的通用软件项目交付 Skill。它把需求、产品完整性、UX、UI、架构、开发和独立 QA 串成一条可验证的交付流程。1.2 版会先按“当前阶段”只唤醒最小必要角色，再按“每个任务包”选择 Luna、Terra 或 Sol 及思考强度，并在安全边界内准备所需 Skill/MCP。
+`dingxinglizi` 是一套面向 Codex 的通用软件项目交付 Skill；稳定调用名为 `$software-project-orchestrator`。它把需求、产品完整性、UX、UI、架构、开发和独立 QA 串成一条可验证的交付流程。1.2 版会先按“当前阶段”只唤醒最小必要角色，再按“每个任务包”选择 Luna、Terra 或 Sol 及思考强度，并在安全边界内准备所需 Skill/MCP。
 
 它适用于从简单内部工具，到 CRM、电商、SaaS、家政平台、AI Agent 等跨行业项目。业务事实保存在项目文档中，不依赖聊天 Session 记忆；外部 MCP/连接器是可选增强能力，不是运行前提。
 
