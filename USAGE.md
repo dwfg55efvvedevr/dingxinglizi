@@ -22,7 +22,7 @@ Direct GitHub install:
 
 ```bash
 mkdir -p ~/.agents/skills
-git clone https://github.com/dwfg55efvvedevr/dingxinglizi.git \
+git clone https://github.com/lizi-product-studio/dingxinglizi.git \
   ~/.agents/skills/software-project-orchestrator
 ```
 
