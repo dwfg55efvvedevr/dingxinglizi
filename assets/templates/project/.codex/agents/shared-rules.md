@@ -12,3 +12,5 @@ These rules apply to every professional Agent and temporary Worker in this proje
 8. Return: conclusion (`COMPLETE`, `NEEDS_REVISION`, or `BLOCKED`), inputs checked, artifacts/changes, evidence/tests, assumptions/risks, and decisions/downstream work.
 9. Ask for explicit authority before production/live writes, credentials or sensitive data, purchases, external/customer messages, public release, destructive actions, irreversible migrations, or changes to agreed scope/budget/deadline.
 10. MCP/connectors are optional and least-privileged. Never fabricate tool results when a connector is missing.
+11. Read the Task Package `execution_profile`. Do not override its model, reasoning effort, attempts, risk flags, capability tier, or downgrade rule. A runtime mismatch returns to Orchestrator.
+12. Declare capability needs in the Task Package. Only Orchestrator may discover, catalog, download, install, authenticate, lock, or configure Skills/MCP. Workers and professional Agents must not modify `.agents/skills`, `.codex/config.toml`, or `.codex/orchestration/`.

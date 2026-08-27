@@ -1,0 +1,19 @@
+{
+  "policy_version": "1.1.0",
+  "mode": "allowlisted_project_local",
+  "auto_install_skills": true,
+  "auto_configure_credential_free_http_mcp": true,
+  "install_scope": "project",
+  "allowed_github_repositories": [],
+  "allowed_licenses": ["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause"],
+  "require_full_commit_sha": true,
+  "require_archive_sha256": true,
+  "allow_executable_files": false,
+  "allow_oauth_or_secrets": false,
+  "allow_stdio_packages": false,
+  "allow_permission_expansion": false,
+  "maximum_archive_bytes": 10485760,
+  "maximum_extracted_bytes": 52428800,
+  "maximum_member_bytes": 5242880,
+  "maximum_files": 1000
+}

@@ -14,7 +14,11 @@ Operate one project delivery system in which the Skill owns workflow, Custom Age
 3. Read `docs/00-project-context.md`, `01-domain-rules.md`, `02-glossary.md`, `04-prd.md`, `docs/project-status.json`, the current task package, and any approved stage-specific documents. Treat chat history as non-authoritative until a decision is written back.
 4. Classify material facts as `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`. Ask only for unknowns that would make a safe, testable result diverge materially.
 5. Choose `Simple`, `Standard`, or `Complex` using [complexity-routing.md](references/complexity-routing.md). Use the smallest role set that preserves independent final QA.
-6. Build or refresh a task package with `python3 scripts/create_task_package.py PROJECT_DIR --task-id TASK-001 --owner ROLE --reviewer ROLE --objective "..."`.
+6. Inspect the current runtime's supported model choices and refresh `.codex/orchestration/runtime-inventory.json` with `status: VERIFIED`, the exact model slugs, time and evidence source. This is Orchestrator work, not user configuration. If availability cannot be verified, routing must block.
+7. Build a task package with task type, risk flags and capability needs. `create_task_package.py` deterministically resolves the Luna/Terra/Sol execution profile against the verified inventory. Read [model-routing.md](references/model-routing.md).
+8. Before spawning the owner, resolve required capabilities through [capability-resolution.md](references/capability-resolution.md). Only the Orchestrator may change the project capability policy, catalog, lock or managed MCP configuration.
+9. Run `python3 scripts/check_execution_plan.py PROJECT_DIR tasks/TASK-001.yaml`. Spawn only after it reports `READY`.
+10. Spawn the Agent with the Task Package's explicit `selected_model` and `model_reasoning_effort`. Do not start governed work when routing or a required capability is blocked.
 
 ## Orchestration constraints
 
@@ -24,6 +28,8 @@ Operate one project delivery system in which the Skill owns workflow, Custom Age
 - Keep one writer per shared mutable file. Parallelize independent read-heavy audit, exploration, design, architecture, and QA work only when file ownership is disjoint.
 - Development and final QA must be different sessions or Agents at every complexity level.
 - Require every delegated role to read project documents; never rely on inherited session memory as the only business context.
+- Do not hard-code a model in a role TOML. Route each Task Package from role, complexity, task type, risk and prior valid failures. A missing required Sol route blocks; it never silently downgrades.
+- Professional Agents and Workers may declare or recommend capabilities but may not download, install, authenticate, or edit runtime configuration themselves. Provision centrally before dispatch.
 
 Read [role-contracts.md](references/role-contracts.md) before assigning or changing roles. Project-ready Custom Agent configurations are in `assets/templates/project/.codex/agents/` and are copied during initialization.
 
@@ -55,6 +61,7 @@ Do not enter `READY_FOR_BUILD` unless the role-page, page-feature, feature-state
 - Task decomposition: read [task-packages.md](references/task-packages.md).
 - QA, rejection, or rework: read [defect-routing.md](references/defect-routing.md) and [qa-and-completion.md](references/qa-and-completion.md).
 - External tools or services: read [mcp-guide.md](references/mcp-guide.md). Grant each role only the minimum tools and access required for its current task.
+- Automated execution, pause states or credential/trust boundaries: read [automation-boundaries.md](references/automation-boundaries.md).
 
 ## Completion contract
 

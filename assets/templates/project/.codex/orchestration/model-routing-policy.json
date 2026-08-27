@@ -1,0 +1,19 @@
+{
+  "policy_version": "1.1.0",
+  "routing_unit": "task_package",
+  "runtime_precedence": [
+    "task_package_execution_profile",
+    "explicit_spawn_override",
+    "runtime_agent_default",
+    "parent_inheritance"
+  ],
+  "model_families": {
+    "economy": "gpt-5.6-luna",
+    "balanced": "gpt-5.6-terra",
+    "frontier": "gpt-5.6-sol"
+  },
+  "max_attempts": 3,
+  "max_escalations": 2,
+  "silent_high_risk_downgrade": false,
+  "agent_toml_model_binding": false
+}

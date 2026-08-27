@@ -40,6 +40,33 @@ def check(root) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
     if not (root / "AGENTS.md").is_file():
         errors.append("AGENTS.md is missing")
+    for relative in (
+        ".codex/orchestration/model-routing-policy.json",
+        ".codex/orchestration/capability-policy.json",
+        ".codex/orchestration/capability-catalog.json",
+        ".codex/orchestration/capability-lock.json",
+        ".codex/orchestration/runtime-inventory.json",
+    ):
+        path = root / relative
+        if not path.is_file():
+            errors.append(f"Required orchestration policy is missing: {relative}")
+            continue
+        try:
+            content = json.loads(read_text(path))
+            if relative.endswith("model-routing-policy.json"):
+                from model_routing import validate_model_policy
+
+                validate_model_policy(content)
+            if relative.endswith("runtime-inventory.json"):
+                if content.get("status") not in {"UNVERIFIED", "VERIFIED"}:
+                    errors.append(f"{relative}: status must be UNVERIFIED or VERIFIED")
+                models = content.get("available_models")
+                if not isinstance(models, list):
+                    errors.append(f"{relative}: available_models must be a list")
+                elif content.get("status") == "VERIFIED" and not models:
+                    errors.append(f"{relative}: VERIFIED inventory requires at least one available model")
+        except (ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"{relative}: invalid JSON: {exc}")
     for relative in REQUIRED_DOCS:
         path = root / relative
         if not path.is_file():
@@ -71,6 +98,11 @@ def check(root) -> tuple[list[str], list[str]]:
                 errors.append(f"docs/project-status.json: unsupported current_state '{state}'")
             if status.get("complexity") not in {"Simple", "Standard", "Complex"}:
                 errors.append("docs/project-status.json: complexity must be Simple, Standard, or Complex")
+            execution = status.get("execution_control", {})
+            if execution.get("model_routing_policy") != "1.1.0":
+                errors.append("docs/project-status.json: model_routing_policy must be 1.1.0")
+            if execution.get("capability_policy") != "1.1.0":
+                errors.append("docs/project-status.json: capability_policy must be 1.1.0")
             for gate in ("requirements", "product", "ux", "ui", "architecture", "build", "qa", "release"):
                 if gate not in status.get("gates", {}):
                     errors.append(f"docs/project-status.json: missing gate '{gate}'")

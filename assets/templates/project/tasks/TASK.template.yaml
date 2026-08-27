@@ -9,6 +9,37 @@ may_spawn_agents: false
 may_spawn_workers: false
 priority: "P2"
 objective: "BLOCKING_UNKNOWN"
+task_type: "BLOCKING_UNKNOWN"
+risk_profile:
+  flags: []
+  failed_attempts: 0
+  failure_type: "none"
+execution_profile:
+  policy_version: "1.1.0"
+  route_fingerprint: "BLOCKING_UNKNOWN"
+  routing_mode: "explicit_spawn_override"
+  availability_source: "BLOCKING_UNKNOWN"
+  availability_verified: false
+  available_models: []
+  status: "PENDING_ROUTE"
+  capability_tier: "BLOCKING_UNKNOWN"
+  preferred_model: "BLOCKING_UNKNOWN"
+  selected_model: "BLOCKING_UNKNOWN"
+  model_reasoning_effort: "BLOCKING_UNKNOWN"
+  fallback_models: []
+  routing_reasons: []
+  attempt: 1
+  max_attempts: 3
+  downgrade_policy: "new_low_risk_task_package_only"
+  escalation_history: []
+capability_requirements:
+  required: []
+  optional: []
+  permission_ceiling: "read"
+  provisioning_status: "PENDING"
+  resolved_skills: []
+  resolved_mcp_servers: []
+  blocked: []
 business_context:
   value: "BLOCKING_UNKNOWN"
   affected_roles: []

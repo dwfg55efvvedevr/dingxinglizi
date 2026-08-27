@@ -13,6 +13,8 @@
 - Requirements maintains business facts but is not their private holder. All roles consume project documents.
 - Engineering Lead and final QA must be separate Agents or sessions. Development self-tests do not equal acceptance.
 - One writer owns each shared mutable file at a time. Work only within the current task package's allowed files.
+- Models and reasoning effort are routed per Task Package. Role TOML files do not bind a permanent model. Orchestrator must spawn with the resolved explicit route; other Agents may not override it.
+- Agents declare capability requirements, but only Orchestrator may discover, approve, download, lock, install, authenticate, or configure Skills/MCP. Workers may not provision capabilities.
 
 ## Hard gates
 
@@ -38,6 +40,7 @@
 
 - Explicit confirmation is required for production/live-system writes, credentials or sensitive data, purchases, customer/external messages, public release, destructive actions, irreversible migrations, or changes to agreed scope/budget/deadline.
 - MCP and connectors are optional. Grant minimum access per task; absence of a connector is an evidence gap, never permission to fabricate results.
+- Zero-click provisioning is limited to project-local, allowlisted, immutable, hash-verified, license-approved, credential-free capabilities. Unknown community code, executable installers, OAuth, secrets, write access, global changes, and production access require explicit authorization.
 
 ## Completion return
 

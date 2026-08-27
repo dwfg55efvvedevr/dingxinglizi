@@ -4,7 +4,7 @@
 
 ## 中文介绍
 
-`software-project-orchestrator` 是一套面向 Codex 的通用软件项目交付 Skill。它把需求、产品完整性、UX、UI、架构、开发和独立 QA 串成一条可验证的交付流程，并根据项目复杂度动态启用最小充分的 Agent 团队。
+`software-project-orchestrator` 是一套面向 Codex 的通用软件项目交付 Skill。它把需求、产品完整性、UX、UI、架构、开发和独立 QA 串成一条可验证的交付流程，并根据项目复杂度动态启用最小充分的 Agent 团队。1.1 版进一步按“每个任务包”自动选择 Luna、Terra 或 Sol 及思考强度，并在安全边界内自动准备所需 Skill/MCP。
 
 它适用于从简单内部工具，到 CRM、电商、SaaS、家政平台、AI Agent 等跨行业项目。业务事实保存在项目文档中，不依赖聊天 Session 记忆；外部 MCP/连接器是可选增强能力，不是运行前提。
 
@@ -12,6 +12,9 @@
 
 - 在开发前补齐业务背景、角色、页面、功能、状态、权限和验收标准。
 - 按 `Simple / Standard / Complex` 自动选择 Agent 组合，避免小项目过度编排、复杂项目角色缺失。
+- 根据角色、复杂度、任务类型、风险和失败记录，稳定路由 `gpt-5.6-luna`、`gpt-5.6-terra` 或 `gpt-5.6-sol`，无需用户逐个 Agent 配模型。
+- 普通质量失败先提升思考强度，再提升模型档位；网络、权限、缺上下文等非推理失败不会浪费额度升级模型。
+- 自动复用已安装能力；对项目白名单中固定 commit、哈希校验、许可允许、无需凭据的 Skill/MCP 可自动准备。
 - 保持一个全局 Orchestrator，禁止 Agent 网状互相管理。
 - 通过阶段门禁阻止“需求没定就开写”“开发完成就自称验收通过”。
 - 用标准 Task Package 限定目标、范围、文件所有权、交付物和返回路径。
@@ -28,6 +31,8 @@
 | 项目 `AGENTS.md` | 长期有效的协作边界和禁止事项 |
 | 项目文档 | 业务事实、规则、决策、契约、任务和验收证据 |
 | MCP/连接器 | GitHub、Figma、浏览器、任务系统、数据库、部署等可选能力 |
+
+模型不永久绑定角色。任务包先解析 `Economy / Standard / Advanced / Expert / Exceptional` 能力档，再映射到 Luna／Terra／Sol；Orchestrator 以显式模型和思考强度启动 Agent。能力也不由各 Agent 随意安装，而是由一个中央 Capability Broker 在 Agent 启动前统一解析、锁定和配置。
 
 基准角色为：
 
@@ -129,10 +134,50 @@ python3 scripts/create_task_package.py /path/to/project \
   --owner engineering_lead \
   --reviewer qa \
   --stage READY_FOR_BUILD \
+  --task-type implementation \
+  --risk permissions \
+  --available-model gpt-5.6-luna \
+  --available-model gpt-5.6-terra \
+  --available-model gpt-5.6-sol \
+  --required-capability browser-control \
   --objective "实现已批准的客户资料流程"
 ```
 
-任务包包含业务背景、输入文档、范围、非范围、交付物、验收标准、允许修改的文件、禁止事项和返回对象。生成器会拒绝重复任务 ID，以及 owner 与 reviewer 为同一角色的任务。
+`--available-model` 必须来自当前运行时实际可用模型；Skill 正常运行时由 Orchestrator 自动读取并维护项目的 runtime inventory，不需要用户逐个配置。任务包还会写入模型、思考强度、路由理由、降级规则、最大尝试次数和能力需求。生成器会拒绝重复任务 ID，以及 owner 与 reviewer 为同一角色的任务。
+
+单独预览模型路由：
+
+```bash
+python3 scripts/route_task.py \
+  --complexity Complex \
+  --task-type architecture \
+  --role architect \
+  --risk security
+```
+
+解析或安全准备能力：
+
+```bash
+python3 scripts/resolve_capabilities.py /path/to/project \
+  --required browser-control
+
+# 只有计划结果为 AUTO_PROVISIONABLE 时才会实际准备
+python3 scripts/resolve_capabilities.py /path/to/project \
+  --required browser-control \
+  --apply
+
+python3 scripts/check_execution_plan.py /path/to/project \
+  tasks/TASK-001.yaml \
+  --available-model gpt-5.6-luna \
+  --available-model gpt-5.6-terra \
+  --available-model gpt-5.6-sol
+```
+
+### “完全自动化”的准确范围
+
+无需用户逐个选择角色、模型、思考强度或配置已经批准的能力。系统可以自动完成背景读取、复杂度判断、角色选择、任务路由、可信能力准备、执行、验证、有限重试、模型升级和独立 QA。
+
+它不会无条件执行任意 GitHub/社区代码，也不会绕过 OAuth、密钥、账号连接、许可证、写权限、全局安装、生产发布或破坏性操作。以上情况会给出精确的 `BLOCKED_*` 原因和所需授权。这样既实现日常零手工编排，也不虚假宣称可以安全地接管所有外部账号和未知软件。
 
 ### 运行阶段门禁
 
@@ -171,7 +216,7 @@ python3 -m unittest discover -s scripts/tests -v
 
 ## English
 
-`software-project-orchestrator` is a reusable Codex Skill for governing software delivery from discovery to independent QA. It creates durable project memory, classifies work as Simple, Standard, or Complex, selects the smallest sufficient Agent team, enforces pre-build gates, produces bounded task packages, routes defects to their source, and requires evidence before completion.
+`software-project-orchestrator` is a reusable Codex Skill for governing software delivery from discovery to independent QA. It creates durable project memory, classifies work as Simple, Standard, or Complex, selects the smallest sufficient Agent team, routes each task to Luna, Terra or Sol with an explicit reasoning effort, safely resolves approved capabilities, enforces pre-build gates, and requires evidence before completion.
 
 It is domain-neutral: reuse the workflow for CRM, e-commerce, SaaS, home services, AI agents, and other products while replacing the project-specific facts, rules, state machines, permissions, architecture, and tests.
 

@@ -1,6 +1,6 @@
 # Software Project Orchestrator — usage
 
-This folder is a complete reusable Codex Skill. It creates a durable project memory, selects a Simple/Standard/Complex role set, enforces pre-build matrices, generates task packages, routes defects to their source, and requires independent QA evidence before completion.
+This folder is a complete reusable Codex Skill. It creates durable project memory, selects a Simple/Standard/Complex role set, routes each Task Package to Luna/Terra/Sol with an explicit reasoning effort, prepares trusted capabilities, enforces pre-build matrices, routes defects to their source, and requires independent QA evidence before completion.
 
 The architecture is deliberately separated:
 
@@ -12,6 +12,8 @@ The architecture is deliberately separated:
 | Project documents | business facts, approved baselines, decisions and evidence | generated `docs/`, `tasks/`, `evidence/` |
 | MCP/connectors | optional external data/actions | configured separately, only when needed |
 
+The generated project also contains `.codex/orchestration/`: versioned model policy, capability trust policy, candidate catalog and resolution lock. These are project memory and must be reviewed like other contracts.
+
 ## Install or place the Skill
 
 Choose one scope. Copy or symlink the whole `software-project-orchestrator` folder; do not copy only `SKILL.md`.
@@ -19,7 +21,7 @@ Choose one scope. Copy or symlink the whole `software-project-orchestrator` fold
 - Personal, available across projects: `$HOME/.agents/skills/software-project-orchestrator/`
 - Repository-specific: `<repository>/.agents/skills/software-project-orchestrator/`
 
-Codex discovers skills from these locations. If it does not appear after copying, restart Codex. This delivery is generated in the workspace only; it is not automatically installed or published.
+Codex discovers skills from these locations. If it does not appear after copying, restart Codex. Installing from this GitHub repository is still a separate local action; publication does not silently modify a user's Skill directories.
 
 The Skill keeps the platform default of allowing both automatic matching and explicit invocation. When other orchestration skills have overlapping descriptions, invoke this one explicitly so your intended workflow is unambiguous.
 
@@ -98,10 +100,60 @@ python3 scripts/create_task_package.py /path/to/project \
   --owner engineering_lead \
   --reviewer qa \
   --stage READY_FOR_BUILD \
+  --task-type implementation \
+  --risk permissions \
+  --required-capability github-read \
   --objective "Implement the approved customer profile flow"
 ```
 
-The generator refuses duplicate task IDs and owner/reviewer equality. Fill scope, exclusions, deliverables, allowed files, Given/When/Then acceptance criteria, validation, evidence, risks, and handoff before dispatch.
+The generator refuses duplicate task IDs and owner/reviewer equality. It computes an explicit execution profile from role, project complexity, task type, risk flags and valid prior failures. Fill scope, exclusions, deliverables, allowed files, Given/When/Then acceptance criteria, validation, evidence, risks, and handoff before dispatch.
+
+At runtime, Orchestrator first records the actual supported model slugs in `.codex/orchestration/runtime-inventory.json`. The initialized inventory is `UNVERIFIED` and intentionally blocks dispatch until that automatic preflight is complete. For direct CLI use, pass each actually available model to both task creation and execution preflight with repeated `--available-model` arguments.
+
+## Route models and reasoning effort
+
+Do not add permanent `model` or `model_reasoning_effort` values to role TOML files. Run routing for the Task Package, then have Orchestrator pass `selected_model` and `model_reasoning_effort` explicitly when spawning the Agent:
+
+```bash
+python3 scripts/route_task.py \
+  --complexity Standard \
+  --task-type implementation \
+  --role engineering_lead
+```
+
+Routing is deterministic for the same policy and structured inputs. Economy maps to Luna, normal balanced work to Terra, and expert/high-risk work to Sol. A valid quality failure raises effort first and model tier second. Network, missing input, auth, permissions and unavailable tools do not trigger model escalation. High-risk work blocks if its Sol floor is unavailable; only a newly decomposed low-risk package may downgrade.
+
+## Resolve Skills and MCP automatically
+
+Professional Agents declare capabilities in `capability_requirements`; they never install their own dependencies. Orchestrator performs read-only discovery, reviews the source metadata, and maintains the project catalog. The Broker first reuses installed capabilities:
+
+```bash
+python3 scripts/resolve_capabilities.py /path/to/project \
+  --required github-read \
+  --required browser-control
+```
+
+Plan mode never downloads. `--apply` provisions only a candidate accepted by `.codex/orchestration/capability-policy.json`: project-local, allowlisted, fixed full commit, matching archive SHA-256, allowed license, safe archive, credential-free, and within the read-only permission ceiling.
+
+```bash
+python3 scripts/resolve_capabilities.py /path/to/project \
+  --required browser-control \
+  --apply
+```
+
+Use a fresh Agent session after provisioning and verify the runtime actually exposes the capability. Unknown community results, floating versions, code/install hooks, OAuth, secrets, private sources, write permissions, STDIO software, global installation and production access remain `BLOCKED_*` until explicitly authorized. This is the intentional boundary of zero-config automation, not a missing feature.
+
+Before dispatch, enforce both route integrity and capability readiness:
+
+```bash
+python3 scripts/check_execution_plan.py /path/to/project \
+  tasks/TASK-001.yaml \
+  --available-model gpt-5.6-luna \
+  --available-model gpt-5.6-terra \
+  --available-model gpt-5.6-sol
+```
+
+Only `READY` permits Orchestrator to spawn the Agent. The launch must explicitly use the task's model and reasoning effort; a mismatch is blocking evidence, not a warning.
 
 ## Run gates
 

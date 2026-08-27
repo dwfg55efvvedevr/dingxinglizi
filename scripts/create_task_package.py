@@ -4,21 +4,46 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
 
 from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_AGENTS, project_root
+from model_routing import route_fingerprint, route_with_inventory, validate_model_policy
 
 
 WORKERS = {"frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"}
+CAPABILITY_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def quoted(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
 
-def create(root: Path, task_id: str, owner: str, reviewer: str, objective: str, stage: str, return_to: str) -> Path:
+def yaml_list(values: list[str], indent: int = 2) -> str:
+    if not values:
+        return " []"
+    prefix = " " * indent
+    return "\n" + "\n".join(f"{prefix}- {quoted(value)}" for value in values)
+
+
+def create(
+    root: Path,
+    task_id: str,
+    owner: str,
+    reviewer: str,
+    objective: str,
+    stage: str,
+    return_to: str,
+    task_type: str = "implementation",
+    risk_flags: list[str] | None = None,
+    failed_attempts: int = 0,
+    failure_type: str = "none",
+    required_capabilities: list[str] | None = None,
+    optional_capabilities: list[str] | None = None,
+    available_models: list[str] | None = None,
+) -> Path:
     task_id = task_id.upper()
     if not re.fullmatch(r"TASK-[A-Z0-9][A-Z0-9_-]*", task_id):
         raise ValueError("task-id must look like TASK-001 or TASK-AUTH-01")
@@ -40,16 +65,55 @@ def create(root: Path, task_id: str, owner: str, reviewer: str, objective: str, 
     status_path = root / "docs/project-status.json"
     if not status_path.is_file():
         raise ValueError("Project is not initialized: docs/project-status.json is missing")
+    policy_path = root / ".codex/orchestration/model-routing-policy.json"
+    try:
+        validate_model_policy(json.loads(policy_path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Invalid executable model routing policy: {exc}") from exc
     destination = root / "tasks" / f"{task_id}.yaml"
     if destination.exists():
         raise ValueError(f"Task package already exists and will not be overwritten: {destination}")
     project_name = root.name
     try:
-        import json
-
-        project_name = json.loads(status_path.read_text(encoding="utf-8")).get("project", project_name)
-    except (ValueError, OSError):
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"docs/project-status.json is invalid; routing fails closed: {exc}") from exc
+    project_name = status.get("project", project_name)
+    complexity = status.get("complexity")
+    if complexity not in {"Simple", "Standard", "Complex"}:
+        raise ValueError("docs/project-status.json has no valid Simple/Standard/Complex complexity")
+    inventory_path = root / ".codex/orchestration/runtime-inventory.json"
+    inventory: dict[str, object] = {}
+    try:
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
         pass
+    if available_models:
+        runtime_models = sorted(set(available_models))
+        availability_source = "verified_runtime_snapshot"
+        availability_verified = True
+    else:
+        runtime_models = sorted(set(inventory.get("available_models", []))) if isinstance(inventory.get("available_models"), list) else []
+        availability_verified = inventory.get("status") == "VERIFIED" and bool(runtime_models)
+        availability_source = "verified_runtime_snapshot" if availability_verified else "unverified_runtime_inventory"
+    route = route_with_inventory(
+        complexity=complexity,
+        task_type=task_type,
+        role=owner,
+        risk_flags=risk_flags or [],
+        failed_attempts=failed_attempts,
+        failure_type=failure_type,
+        available_models=runtime_models,
+        availability_source=availability_source,
+        availability_verified=availability_verified,
+    )
+    required_capabilities = sorted(set(required_capabilities or []))
+    optional_capabilities = sorted(set(optional_capabilities or []))
+    for capability_id in required_capabilities + optional_capabilities:
+        if not CAPABILITY_ID.fullmatch(capability_id):
+            raise ValueError(
+                f"invalid capability id {capability_id!r}; use only letters, digits, underscore, and hyphen"
+            )
     may_spawn_workers = "true" if owner == "engineering_lead" else "false"
     content = f'''task_id: {quoted(task_id)}
 project: {quoted(project_name)}
@@ -62,6 +126,37 @@ may_spawn_agents: false
 may_spawn_workers: {may_spawn_workers}
 priority: "P2"
 objective: {quoted(objective)}
+task_type: {quoted(task_type)}
+risk_profile:
+  flags:{yaml_list(route['risk_flags'], 4)}
+  failed_attempts: {failed_attempts}
+  failure_type: {quoted(failure_type)}
+execution_profile:
+  policy_version: {quoted(route['policy_version'])}
+  route_fingerprint: {quoted(route_fingerprint(route))}
+  routing_mode: {quoted(route['routing_mode'])}
+  availability_source: {quoted(route['availability_source'])}
+  availability_verified: {str(route['availability_verified']).lower()}
+  available_models:{yaml_list(route['available_models'], 4)}
+  status: {quoted(route['status'])}
+  capability_tier: {quoted(route['capability_tier'])}
+  preferred_model: {quoted(route['preferred_model'])}
+  selected_model: {quoted(route['selected_model'])}
+  model_reasoning_effort: {quoted(route['model_reasoning_effort'])}
+  fallback_models:{yaml_list(route['fallback_models'], 4)}
+  routing_reasons:{yaml_list(route['routing_reasons'], 4)}
+  attempt: {failed_attempts + 1}
+  max_attempts: {route['max_attempts']}
+  downgrade_policy: {quoted(route['downgrade_policy'])}
+  escalation_history: []
+capability_requirements:
+  required:{yaml_list(required_capabilities, 4)}
+  optional:{yaml_list(optional_capabilities, 4)}
+  permission_ceiling: "read"
+  provisioning_status: "PENDING"
+  resolved_skills: []
+  resolved_mcp_servers: []
+  blocked: []
 business_context:
   value: "BLOCKING_UNKNOWN"
   affected_roles: []
@@ -113,10 +208,22 @@ def main() -> int:
     parser.add_argument("--objective", required=True)
     parser.add_argument("--stage", choices=CANONICAL_STATES + sorted(INTERRUPT_STATES), default="BACKLOG")
     parser.add_argument("--return-to", default="orchestrator")
+    parser.add_argument("--task-type", default="implementation")
+    parser.add_argument("--risk", action="append", default=[])
+    parser.add_argument("--failed-attempts", type=int, default=0)
+    parser.add_argument("--failure-type", default="none")
+    parser.add_argument("--required-capability", action="append", default=[])
+    parser.add_argument("--optional-capability", action="append", default=[])
+    parser.add_argument("--available-model", action="append", default=[], help="Runtime-verified model slug; repeat as needed")
     args = parser.parse_args()
     try:
         root = project_root(args.project_dir)
-        destination = create(root, args.task_id, args.owner, args.reviewer, args.objective, args.stage, args.return_to)
+        destination = create(
+            root, args.task_id, args.owner, args.reviewer, args.objective, args.stage, args.return_to,
+            args.task_type, args.risk, args.failed_attempts, args.failure_type,
+            args.required_capability, args.optional_capability,
+            args.available_model,
+        )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

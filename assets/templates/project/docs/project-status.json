@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project": "{{PROJECT_NAME}}",
   "complexity": "{{COMPLEXITY}}",
   "current_state": "BACKLOG",
@@ -8,6 +8,12 @@
   "updated_by": "orchestrator",
   "approval_authority": "BLOCKING_UNKNOWN",
   "risk_acceptance_authority": "BLOCKING_UNKNOWN",
+  "execution_control": {
+    "model_routing_policy": "1.1.0",
+    "capability_policy": "1.1.0",
+    "active_attempts": 0,
+    "blocked_reason_code": null
+  },
   "gates": {
     "requirements": {"status": "PENDING", "version": null, "evidence": []},
     "product": {"status": "PENDING", "version": null, "evidence": []},
