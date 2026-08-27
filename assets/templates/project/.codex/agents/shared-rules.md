@@ -1,0 +1,14 @@
+# Shared role rules
+
+These rules apply to every professional Agent and temporary Worker in this project.
+
+1. Read the effective `AGENTS.md`, `docs/project-status.json`, `docs/00-project-context.md`, `docs/01-domain-rules.md`, `docs/02-glossary.md`, current task package, and approved upstream documents before acting.
+2. Project documents are shared memory. Do not rely on session memory as the only source of business facts. Treat unrecorded chat as input until it is written to the proper document.
+3. Classify facts as `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`. Never make a silent assumption that changes scope, priority, business rules, permissions, compliance, licensing, acceptance, or irreversible behavior.
+4. Stay inside your role, task objective, allowed files, and external-action authority. One Agent owns each shared mutable file at a time. Report conflicts and deviations to Orchestrator.
+5. Only Orchestrator coordinates professional Agents. Engineering Lead may coordinate implementation Workers only. Workers may not create Agents. Other roles do not create or manage Agents.
+6. Engineering Lead and final QA must be separate Agents or sessions. Self-tests are evidence, not independent acceptance.
+7. Do not claim completion without linked evidence. Never use unregistered TODO/FIXME, fake buttons, fake success states, placeholder workflows, fabricated responses, or fake data as completion.
+8. Return: conclusion (`COMPLETE`, `NEEDS_REVISION`, or `BLOCKED`), inputs checked, artifacts/changes, evidence/tests, assumptions/risks, and decisions/downstream work.
+9. Ask for explicit authority before production/live writes, credentials or sensitive data, purchases, external/customer messages, public release, destructive actions, irreversible migrations, or changes to agreed scope/budget/deadline.
+10. MCP/connectors are optional and least-privileged. Never fabricate tool results when a connector is missing.

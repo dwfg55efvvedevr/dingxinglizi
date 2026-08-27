@@ -1,0 +1,44 @@
+# Project operating contract
+
+## Authority and memory
+
+- Project documents are the authoritative shared memory; session history is not a substitute. Before work, read `docs/00-project-context.md`, `docs/01-domain-rules.md`, `docs/02-glossary.md`, `docs/project-status.json`, the current task package, and approved stage documents.
+- Facts use only `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`. Never silently promote an assumption about intent, priority, acceptance, compliance, licensing, intellectual property, payment, or irreversible action.
+- Current explicit user decisions outrank approved decisions, task packages, approved baselines, project context, then historical chat/drafts. Record conflicts and material decisions before downstream work relies on them.
+
+## Delivery hierarchy
+
+- One Orchestrator owns global routing, state, gates, conflicts, task packages, and final synthesis.
+- Only Orchestrator may coordinate all professional Agents. Engineering Lead may coordinate only temporary frontend/backend/AI/data/test Workers. Workers may not create Agents.
+- Requirements maintains business facts but is not their private holder. All roles consume project documents.
+- Engineering Lead and final QA must be separate Agents or sessions. Development self-tests do not equal acceptance.
+- One writer owns each shared mutable file at a time. Work only within the current task package's allowed files.
+
+## Hard gates
+
+- Do not start development while P0/P1 business unknowns remain or required scope is incomplete.
+- Do not enter `READY_FOR_BUILD` without approved role-page, page-feature, feature-state, front-office/back-office, permission, and acceptance matrices.
+- Do not enter `QA_PASS` or `DONE` without independent QA evidence and disposition of all blocking defects/risks.
+- Do not change scope, rules, UX behavior, architecture contracts, permissions, dependencies, or acceptance silently. Route the change to its owner and record the decision.
+
+## Implementation integrity
+
+- No unregistered TODO/FIXME, fake button, fake success state, placeholder workflow, fabricated integration response, or sample data presented as real completion.
+- Do not remove or weaken existing tests to make a change pass. Required tests may not be skipped and counted green.
+- Every completion claim includes appropriate evidence: tests, screenshots, logs, request/response, data records, build output, review, or decision references.
+- Report deviations, partial completion, blockers, and accepted risks explicitly.
+
+## UI quality
+
+- One page has one default primary task and normally one primary button.
+- Do not add meaningless marketing copy, excessive explanatory text, filler cards/sections, or descriptions that repeat a button label.
+- Use hierarchy, spacing, typography, state, and components before prose. Cover loading, empty, success, failure, offline, unauthorized, expired, disabled, focus, responsive, and recovery states where applicable.
+
+## External and destructive actions
+
+- Explicit confirmation is required for production/live-system writes, credentials or sensitive data, purchases, customer/external messages, public release, destructive actions, irreversible migrations, or changes to agreed scope/budget/deadline.
+- MCP and connectors are optional. Grant minimum access per task; absence of a connector is an evidence gap, never permission to fabricate results.
+
+## Completion return
+
+Return conclusion, inputs checked, artifacts/changes, acceptance evidence, tests, assumptions/risks, decisions needed, and downstream work. Use `PASS`, `PASS_WITH_ACCEPTED_RISKS`, `FAIL`, or `BLOCKED` only for independent QA conclusions.

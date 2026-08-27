@@ -1,0 +1,46 @@
+task_id: "TASK-000"
+project: "{{PROJECT_NAME}}"
+stage: "BACKLOG"
+status: "DRAFT"
+owner: "orchestrator"
+reviewer: "qa"
+return_to: "orchestrator"
+may_spawn_agents: false
+may_spawn_workers: false
+priority: "P2"
+objective: "BLOCKING_UNKNOWN"
+business_context:
+  value: "BLOCKING_UNKNOWN"
+  affected_roles: []
+  affected_objects: []
+  rule_refs: []
+input_documents:
+  - "docs/00-project-context.md"
+  - "docs/01-domain-rules.md"
+  - "docs/02-glossary.md"
+dependencies: []
+scope: []
+out_of_scope: []
+deliverables: []
+acceptance_criteria:
+  - id: "AC-000"
+    given: "BLOCKING_UNKNOWN"
+    when: "BLOCKING_UNKNOWN"
+    then: "BLOCKING_UNKNOWN"
+    evidence: "BLOCKING_UNKNOWN"
+allowed_files: []
+forbidden:
+  - "Do not change approved scope, business rules, permissions, contracts, dependencies, or external systems without Orchestrator routing."
+  - "Do not perform production deployment, external messaging, purchases, credential use, destructive actions, or irreversible migrations without explicit authorization."
+validation:
+  commands: []
+  manual: []
+  evidence_locations: []
+assumptions_and_risks: []
+handoff:
+  conclusion: "BLOCKED"
+  inputs_checked: []
+  artifacts: []
+  evidence: []
+  deviations: []
+  downstream_decisions: []

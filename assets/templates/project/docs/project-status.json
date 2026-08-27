@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "project": "{{PROJECT_NAME}}",
+  "complexity": "{{COMPLEXITY}}",
+  "current_state": "BACKLOG",
+  "previous_state": null,
+  "updated_at": "{{DATE}}",
+  "updated_by": "orchestrator",
+  "approval_authority": "BLOCKING_UNKNOWN",
+  "risk_acceptance_authority": "BLOCKING_UNKNOWN",
+  "gates": {
+    "requirements": {"status": "PENDING", "version": null, "evidence": []},
+    "product": {"status": "PENDING", "version": null, "evidence": []},
+    "ux": {"status": "PENDING", "version": null, "evidence": []},
+    "ui": {"status": "PENDING", "version": null, "evidence": []},
+    "architecture": {"status": "PENDING", "version": null, "evidence": []},
+    "build": {"status": "PENDING", "version": null, "evidence": []},
+    "qa": {"status": "PENDING", "version": null, "evidence": []},
+    "release": {"status": "PENDING", "version": null, "evidence": []}
+  },
+  "blocked": null,
+  "rework": null,
+  "open_p0_p1": [],
+  "accepted_risks": [],
+  "active_tasks": []
+}

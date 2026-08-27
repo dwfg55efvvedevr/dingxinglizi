@@ -1,0 +1,4 @@
+interface:
+  display_name: "Software Project Orchestrator"
+  short_description: "Route and govern multi-agent software delivery"
+  default_prompt: "Use $software-project-orchestrator to initialize and orchestrate this software project."
