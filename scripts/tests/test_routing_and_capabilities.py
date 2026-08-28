@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import io
+import re
 import subprocess
 import sys
 import tempfile
@@ -210,11 +211,19 @@ class CapabilityTests(unittest.TestCase):
             "--project-name", "Automation Test", "--domain", "SaaS", "--complexity", "Standard",
         )
         self.assertEqual(result.returncode, 0, result.stdout)
+        started = run("run_state.py", "start", self.root)
+        self.assertEqual(started.returncode, 0, started.stdout)
         inventory = self.root / ".codex/orchestration/runtime-inventory.json"
         inventory.write_text(json.dumps({
             "schema_version": 1,
             "status": "VERIFIED",
+            "runtime_id": "test-runtime",
+            "host_id": "test-host",
+            "runtime_version": "test-version",
+            "evidence_source": "test-fixture",
             "available_models": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"],
+            "available_skills": [],
+            "available_mcp_servers": [],
             "verified_at": "2026-08-27T00:00:00Z",
             "verified_by": "test-runtime",
         }, indent=2) + "\n", encoding="utf-8")
@@ -245,6 +254,8 @@ class CapabilityTests(unittest.TestCase):
         task_path = self.root / "tasks/TASK-AUTO-1.yaml"
         make_task_ready(task_path)
         text = task_path.read_text(encoding="utf-8")
+        self.assertRegex(text, r'(?m)^run_id: "RUN-\d{8}T\d{6}Z-[a-f0-9]{6}"$')
+        self.assertRegex(text, r'(?m)^source_input_fingerprint: "[a-f0-9]{64}"$')
         self.assertIn('preferred_model: "gpt-5.6-sol"', text)
         self.assertIn('model_reasoning_effort: "high"', text)
         self.assertIn('required:\n    - "github-read"', text)
@@ -254,8 +265,45 @@ class CapabilityTests(unittest.TestCase):
         skill = self.root / ".agents/skills/github-read"
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("---\nname: github-read\ndescription: test\n---\n", encoding="utf-8")
-        ready = run("check_execution_plan.py", self.root, "tasks/TASK-AUTO-1.yaml")
+        still_blocked = run("check_execution_plan.py", self.root, "tasks/TASK-AUTO-1.yaml")
+        self.assertEqual(still_blocked.returncode, 3, still_blocked.stdout)
+        self.assertIn("BLOCKED_CAPABILITY", still_blocked.stdout)
+        inventory_path = self.root / ".codex/orchestration/runtime-inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        inventory["available_skills"] = ["github-read"]
+        inventory_path.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+        ready = run("check_execution_plan.py", self.root, "tasks/TASK-AUTO-1.yaml", "--record-ready")
         self.assertEqual(ready.returncode, 0, ready.stdout)
+        receipt = json.loads(receipt_path(self.root, "TASK-AUTO-1").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["schema_version"], 2)
+        self.assertRegex(receipt["run_id"], r"^RUN-\d{8}T\d{6}Z-[a-f0-9]{6}$")
+        self.assertEqual(receipt["source_input_fingerprint"], json.loads(
+            (self.root / ".codex/orchestration/role-plan.json").read_text(encoding="utf-8")
+        )["input_fingerprint"])
+
+    def test_preflight_rejects_detached_and_stale_task_lineage(self) -> None:
+        routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        created = run(
+            "create_task_package.py", self.root, "--task-id", "TASK-LINEAGE-1",
+            "--owner", "requirements", "--reviewer", "qa", "--stage", "DISCOVERY",
+            "--objective", "Verify task lineage", "--task-type", "requirements",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        task = self.root / "tasks/TASK-LINEAGE-1.yaml"
+        make_task_ready(task)
+        text = task.read_text(encoding="utf-8")
+        text = re.sub(r'(?m)^run_id: ".*"$', 'run_id: "NOT_ATTACHED"', text, count=1)
+        text = re.sub(
+            r'(?m)^source_input_fingerprint: ".*"$',
+            'source_input_fingerprint: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"',
+            text, count=1,
+        )
+        task.write_text(text, encoding="utf-8")
+        blocked = run("check_execution_plan.py", self.root, "tasks/TASK-LINEAGE-1.yaml")
+        self.assertEqual(blocked.returncode, 3, blocked.stdout)
+        self.assertIn("run_id must reference", blocked.stdout)
+        self.assertIn("STALE_TASK_INPUT", blocked.stdout)
 
     def test_dispatch_receipt_rejects_unsafe_task_id_and_symlink_escape(self) -> None:
         routed = run("route_roles.py", self.root, "--stage", "DISCOVERY", "--write")
@@ -408,7 +456,10 @@ class CapabilityTests(unittest.TestCase):
         inventory_path = self.root / ".codex/orchestration/runtime-inventory.json"
         verified_inventory = inventory_path.read_text(encoding="utf-8")
         inventory_path.write_text(json.dumps({
-            "schema_version": 1, "status": "UNVERIFIED", "available_models": [],
+            "schema_version": 1, "status": "UNVERIFIED",
+            "runtime_id": None, "host_id": None, "runtime_version": None,
+            "evidence_source": None, "available_models": [],
+            "available_skills": [], "available_mcp_servers": [],
             "verified_at": None, "verified_by": None,
         }, indent=2) + "\n", encoding="utf-8")
         no_model_created = run(
@@ -610,7 +661,7 @@ class CapabilityTests(unittest.TestCase):
             "--task-type", "securty_review",
         )
         self.assertEqual(typo.returncode, 2, typo.stdout)
-        self.assertIn("unsupported task_type", typo.stdout)
+        self.assertIn("invalid choice: 'securty_review'", typo.stdout)
 
     def test_invalid_project_status_fails_closed_instead_of_defaulting_standard(self) -> None:
         status = self.root / "docs/project-status.json"
@@ -626,6 +677,13 @@ class CapabilityTests(unittest.TestCase):
         skill = self.root / ".agents/skills/local-tool"
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("---\nname: local-tool\ndescription: local\n---\n", encoding="utf-8")
+        pending = run("resolve_capabilities.py", self.root, "--required", "local-tool")
+        self.assertEqual(pending.returncode, 3, pending.stdout)
+        self.assertIn('"status": "DISCOVERED_NOT_RUNTIME_VERIFIED"', pending.stdout)
+        inventory_path = self.root / ".codex/orchestration/runtime-inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        inventory["available_skills"] = ["local-tool"]
+        inventory_path.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
         satisfied = run("resolve_capabilities.py", self.root, "--required", "local-tool")
         self.assertEqual(satisfied.returncode, 0, satisfied.stdout)
         self.assertIn('"status": "SATISFIED"', satisfied.stdout)
@@ -731,13 +789,20 @@ class CapabilityTests(unittest.TestCase):
         self.assertEqual(planned.returncode, 0, planned.stdout)
         self.assertIn('"status": "AUTO_PROVISIONABLE"', planned.stdout)
         applied = run("resolve_capabilities.py", self.root, "--required", "public-read", "--apply")
-        self.assertEqual(applied.returncode, 0, applied.stdout)
-        self.assertIn('"status": "PROVISIONED"', applied.stdout)
+        self.assertEqual(applied.returncode, 3, applied.stdout)
+        self.assertIn('"status": "PROVISIONED_PENDING_RUNTIME"', applied.stdout)
         second = run("resolve_capabilities.py", self.root, "--required", "public-read", "--apply")
-        self.assertEqual(second.returncode, 0, second.stdout)
-        self.assertIn('"status": "SATISFIED"', second.stdout)
+        self.assertEqual(second.returncode, 3, second.stdout)
+        self.assertIn('"status": "PROVISIONED_PENDING_RUNTIME"', second.stdout)
+        inventory_path = self.root / ".codex/orchestration/runtime-inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        inventory["available_mcp_servers"] = ["public-read"]
+        inventory_path.write_text(json.dumps(inventory, indent=2) + "\n", encoding="utf-8")
+        satisfied = run("resolve_capabilities.py", self.root, "--required", "public-read")
+        self.assertEqual(satisfied.returncode, 0, satisfied.stdout)
+        self.assertIn('"status": "SATISFIED"', satisfied.stdout)
         added = run("resolve_capabilities.py", self.root, "--required", "second-read", "--apply")
-        self.assertEqual(added.returncode, 0, added.stdout)
+        self.assertEqual(added.returncode, 3, added.stdout)
         config = (self.root / ".codex/config.toml").read_text(encoding="utf-8")
         self.assertEqual(config.count("[mcp_servers.public-read]"), 1)
         self.assertIn('enabled_tools = ["get", "search"]', config)

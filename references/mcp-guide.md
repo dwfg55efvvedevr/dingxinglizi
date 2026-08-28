@@ -27,4 +27,4 @@ MCP resolution is centralized. An Agent declares a required capability in its Ta
 
 The Broker may write a managed block to project `.codex/config.toml` only for an allowlisted, credential-free HTTPS MCP with a read-only permission ceiling and an explicit `enabled_tools` allowlist. It refuses to overwrite an unmanaged server section. OAuth, API keys, private services, STDIO packages, locally installed executables, write scopes, database credentials and deployment access stay blocked until explicitly authorized and configured through the supported host flow.
 
-New or changed MCP configuration may require a fresh Agent session or application restart before tools are visible. Treat configuration as `PROVISIONED` only after file validation and as usable only after runtime discovery confirms it.
+New or changed MCP configuration may require a fresh Agent session or application restart before tools are visible. Treat validated configuration as `PROVISIONED_PENDING_RUNTIME`; treat it as usable only after runtime discovery confirms it and the Orchestrator records the server ID in `runtime-inventory.json`.

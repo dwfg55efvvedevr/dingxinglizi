@@ -1,15 +1,15 @@
 # Task-level model routing
 
-Route a model for each Task Package, not permanently for a role. The same Agent may use Luna for a bounded scan, Terra for normal analysis or implementation, and Sol for security, permissions, migrations, concurrency, production risk, complex architecture, or independent high-impact QA.
+Route a model for each Task Package, not permanently for a role. A temporary Worker may use Luna for a bounded mechanical scan; professional role floors normally begin at Terra. Normal analysis/implementation uses Terra, while security, permissions, migrations, concurrency, production risk, complex architecture, or independent high-impact QA can require Sol.
 
 ## Stable routing contract
 
-Run `scripts/route_task.py` or use `scripts/create_task_package.py`, which calls the same pure routing function. Identical structured inputs and policy version produce the same route. The route records its policy, capability tier, preferred and selected model, reasoning effort, risk flags, reason codes, attempts, fallback and downgrade policy.
+Run `python3 "$SKILL_DIR/scripts/route_task.py"` or use `python3 "$SKILL_DIR/scripts/create_task_package.py"`, which calls the same pure routing function. Identical structured inputs and policy version produce the same route. The route records its policy, capability tier, preferred and selected model, reasoning effort, risk flags, reason codes, attempts, fallback and downgrade policy.
 
 Before task creation, Orchestrator records a verified runtime model snapshot in `.codex/orchestration/runtime-inventory.json`. The initialized file is deliberately `UNVERIFIED`; it does not pretend every account or host exposes every model. Command-line callers may provide the same evidence explicitly by repeating `--available-model` when creating and preflighting a task. An empty or unverified snapshot blocks dispatch.
 
 ```bash
-python3 scripts/route_task.py \
+python3 "$SKILL_DIR/scripts/route_task.py" \
   --complexity Complex \
   --task-type architecture \
   --role architect \

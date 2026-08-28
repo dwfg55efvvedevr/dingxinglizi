@@ -1,7 +1,13 @@
 {
   "schema_version": 1,
   "status": "UNVERIFIED",
+  "runtime_id": null,
+  "host_id": null,
+  "runtime_version": null,
+  "evidence_source": null,
   "available_models": [],
+  "available_skills": [],
+  "available_mcp_servers": [],
   "verified_at": null,
   "verified_by": null
 }

@@ -14,7 +14,7 @@ from dispatch_receipt import record_dispatch_receipt
 from model_routing import route_fingerprint, route_with_inventory, validate_model_policy
 from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION, role_plan_fingerprint, validate_role_policy
 from route_roles import source_fingerprint
-from resolve_capabilities import installed_skill, load_json, mcp_config_details
+from resolve_capabilities import installed_skill, load_json, mcp_config_details, runtime_capabilities
 from task_contract import boolean_scalar, integer_scalar, list_field, quoted_scalar, top_section, validate_task_contract
 
 
@@ -68,6 +68,11 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
         current_input_fingerprint = source_fingerprint(root, task_stage)
         if role_plan.get("input_fingerprint") != current_input_fingerprint:
             errors.append("STALE_ROLE_PLAN: stage inputs changed; rerun route_roles.py and create a new Task Package")
+        task_input_fingerprint = quoted_scalar(text, "source_input_fingerprint")
+        if task_input_fingerprint != current_input_fingerprint:
+            errors.append("STALE_TASK_INPUT: Task Package source input fingerprint differs from current stage inputs")
+        if task_input_fingerprint != role_plan.get("input_fingerprint"):
+            errors.append("ROLE_ROUTE_MISMATCH: Task Package source input fingerprint differs from its role plan")
         quality_gate = role_plan.get("quality_gate")
         if role_plan.get("quality_review_status") == "REUSE_APPROVAL" and quality_gate:
             quality_record = status.get("quality_gates", {}).get(quality_gate, {})
@@ -186,14 +191,17 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
     if quoted_scalar(capabilities, "permission_ceiling") != "read":
         errors.append("BLOCKED_PERMISSION: automatic capability permission ceiling must remain read")
     lock = load_json(root / ".codex/orchestration/capability-lock.json").get("resolved", {})
+    runtime_skills, runtime_mcp_servers, runtime_verified = runtime_capabilities(root)
     for capability_id in list_field(capabilities, "required"):
         record = lock.get(capability_id, {}) if isinstance(lock, dict) else {}
         evidence = record.get("evidence", {}) if isinstance(record, dict) else {}
         locked_mcp_ready = (
-            record.get("status") == "PROVISIONED"
+            record.get("status") in {"PROVISIONED", "PROVISIONED_PENDING_RUNTIME"}
             and record.get("kind") == "mcp_http"
             and evidence.get("permission") == "read"
             and bool(evidence.get("enabled_tools"))
+            and runtime_verified
+            and capability_id in runtime_mcp_servers
         )
         if locked_mcp_ready:
             details = mcp_config_details(root, capability_id)
@@ -204,8 +212,12 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
                 and details.get("url") == evidence.get("url")
                 and details.get("enabled_tools") == sorted(evidence.get("enabled_tools", []))
             )
-        locked_skill_ready = record.get("status") == "PROVISIONED" and record.get("kind") == "skill"
-        ready = locked_mcp_ready or locked_skill_ready or installed_skill(root, capability_id) is not None
+        local_skill_ready = (
+            installed_skill(root, capability_id) is not None
+            and runtime_verified
+            and capability_id in runtime_skills
+        )
+        ready = locked_mcp_ready or local_skill_ready
         if not ready:
             errors.append(f"BLOCKED_CAPABILITY: required capability is not ready: {capability_id}")
     return errors

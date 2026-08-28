@@ -4,10 +4,10 @@ Role files are an installed capability library, not a promise to start every Age
 
 ## Runtime sequence
 
-1. Read `docs/project-status.json` and route the current stage with `scripts/route_roles.py`.
+1. Read `docs/project-status.json` and route the current stage with `python3 "$SKILL_DIR/scripts/route_roles.py"`.
 2. Create Task Packages only for `required_now`, or for a `delegable_workers` entry under the currently active Engineering Lead. Never spawn `deferred_available` roles.
 3. `required_now` is only the first unfinished wave; `deferred_sequence` is a preview, not permission to start those roles.
-4. Before starting, require `check_execution_plan.py ... --record-ready` to create its dispatch receipt. Stop a role after its handoff is persisted, mark the Task Package `COMPLETED`, and record a successful handoff plus artifacts/evidence files that exist inside the project. Re-route with `--completed-role ROLE --completed-task ROLE=tasks/TASK.yaml`; the router verifies the prior READY receipt and completion proof before the next unfinished wave becomes `required_now`.
+4. Before starting, require `python3 "$SKILL_DIR/scripts/check_execution_plan.py" ... --record-ready` to create its dispatch receipt. Stop a role after its handoff is persisted, mark the Task Package `COMPLETED`, and record a successful handoff plus artifacts/evidence files that exist inside the project. Re-route with `--completed-role ROLE --completed-task ROLE=tasks/TASK.yaml`; the router verifies the prior READY receipt and completion proof before the next unfinished wave becomes `required_now`.
 5. Final QA is always a different Agent/session from Engineering Lead, but is not started until `READY_FOR_QA`.
 
 Completed roles accumulate inside one `routing_cycle_id`, so a two-wave gate ends after both verified handoffs instead of restarting wave one. Completion proof must keep the exact stage, complexity, quota mode, and normalized signals of the current cycle. A stage, signal, quota, complexity, or unclaimed input change starts a new cycle and clears prior completion claims.
@@ -39,13 +39,13 @@ Pass only evidenced signals: `unclear_requirements`, `novel_problem`, `evidence_
 Examples:
 
 ```bash
-python3 scripts/route_roles.py PROJECT_DIR --stage DISCOVERY --signal unclear_requirements
-python3 scripts/route_roles.py PROJECT_DIR --stage UX_READY --signal visual_system --quota balanced --write
-python3 scripts/route_roles.py PROJECT_DIR --stage CODE_REVIEW --signal contract_delta \
+python3 "$SKILL_DIR/scripts/route_roles.py" PROJECT_DIR --stage DISCOVERY --signal unclear_requirements
+python3 "$SKILL_DIR/scripts/route_roles.py" PROJECT_DIR --stage UX_READY --signal visual_system --quota balanced --write
+python3 "$SKILL_DIR/scripts/route_roles.py" PROJECT_DIR --stage CODE_REVIEW --signal contract_delta \
   --completed-role engineering_lead \
   --completed-task engineering_lead=tasks/TASK-CODE-REVIEW.yaml \
   --write
-python3 scripts/route_roles.py PROJECT_DIR --stage READY_FOR_QA --write
+python3 "$SKILL_DIR/scripts/route_roles.py" PROJECT_DIR --stage READY_FOR_QA --write
 ```
 
 Unknown stages, signals, completed roles, handoff proofs, policies, and quota modes fail closed. `--write` persists the role plan and synchronizes `quota_mode` plus `max_active_subagents` in `docs/project-status.json`; it does not start Agents. A switch to a smaller quota is rejected while too many sessions remain active.

@@ -1,74 +1,74 @@
 ---
 name: software-project-orchestrator
-description: Initialize, route, govern, and verify multi-agent software projects from discovery through independent QA. Use for new products, major modules, or substantial cross-stack iterations that need shared project facts, dynamic Simple/Standard/Complex role selection, product-completeness gates, task packages, defect routing, and evidence-based completion. Do not use for a small isolated fix or ordinary code review that does not need project orchestration.
+description: Initialize, route, resume, govern, and verify substantial multi-agent software delivery from discovery through independent QA. Use for new products, major modules, or cross-stack iterations that need durable business facts, Simple/Standard/Complex routing, on-demand roles, product and architecture gates, governed task packages, model and capability routing, recovery, defect routing, and evidence-based completion. Do not use for a small isolated fix or ordinary code review that does not need project orchestration.
 ---
 
 # Software Project Orchestrator
 
-Operate one project delivery system in which the Skill owns workflow, Custom Agents own professional roles, the project `AGENTS.md` owns durable operating rules, project documents own business facts, and MCP supplies optional external capabilities. Never make an MCP server a prerequisite for the core workflow.
+Run one evidence-based delivery system: this Skill owns the workflow; Custom Agents own professional responsibilities; the project `AGENTS.md` owns durable rules; project documents own business facts; MCP/connectors provide optional external capability. Do not make MCP a core dependency.
 
-## Start or resume
+Resolve `SKILL_DIR` as the directory containing this `SKILL.md`. Every bundled command below must use the absolute Skill path, `python3 "$SKILL_DIR/scripts/orchestrator.py" ...`, regardless of the current project working directory.
 
-1. Read the nearest effective `AGENTS.md` and inspect existing project documents before creating anything.
-2. Resolve bundled script paths relative to this Skill directory. If the project has not been initialized, run `python3 scripts/init_project.py PROJECT_DIR --project-name "NAME" --domain "DOMAIN"`. Do not overwrite an existing project contract; merge compatible rules manually and preserve stricter rules.
-3. Read `docs/00-project-context.md`, `01-domain-rules.md`, `02-glossary.md`, `04-prd.md`, `docs/project-status.json`, the current task package, and any approved stage-specific documents. Treat chat history as non-authoritative until a decision is written back.
-4. Classify material facts as `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`. Ask only for unknowns that would make a safe, testable result diverge materially.
-5. Choose `Simple`, `Standard`, or `Complex` using [complexity-routing.md](references/complexity-routing.md). Complexity defines responsibilities available across the lifecycle, not how many Agents start now.
-6. Read [on-demand-role-routing.md](references/on-demand-role-routing.md), then run `python3 scripts/route_roles.py PROJECT_DIR --stage CURRENT_STAGE --write`. Keep Orchestrator in the main thread and start only `required_now`, wave by wave. Default to `economy`; installed role profiles are not active sessions.
-7. Complete the applicable lightweight quality checklist. Read [product-thinking-kernel.md](references/product-thinking-kernel.md) for a product decision and [quality-governance.md](references/quality-governance.md) when the current stage is a quality subgate. Read [product-lenses.md](references/product-lenses.md) only when a listed trigger applies. Invoke Quality Governor only when the role plan says `INDEPENDENT_REQUIRED`.
-8. Inspect the current runtime's supported model choices and refresh `.codex/orchestration/runtime-inventory.json` with `status: VERIFIED`, the exact model slugs, time and evidence source. This is Orchestrator work, not user configuration. If availability cannot be verified, routing must block.
-9. Build a task package only for a `required_now` owner or a currently delegable Worker. `create_task_package.py` records the current role-plan fingerprint and deterministically resolves the Luna/Terra/Sol execution profile against the verified inventory. It intentionally generates `DRAFT`; complete the contract, have Orchestrator set `READY_FOR_DISPATCH`, then preflight. Read [task-packages.md](references/task-packages.md) and [model-routing.md](references/model-routing.md).
-10. Before spawning the owner, resolve required capabilities through [capability-resolution.md](references/capability-resolution.md). Only the Orchestrator may change the project capability policy, catalog, lock or managed MCP configuration.
-11. Run `python3 scripts/check_execution_plan.py PROJECT_DIR tasks/TASK-001.yaml --record-ready`. Spawn only after it records a dispatch receipt and reports `READY`; a stale role plan, excessive wave, early reviewer, model/runtime route mismatch, or missing capability blocks without a receipt.
-12. Spawn with the Task Package's explicit model and reasoning effort. Persist a successful handoff with artifacts/evidence, mark the package `COMPLETED`, release file ownership, and remove the role from the active set. Re-route with `--completed-role OWNER --completed-task OWNER=tasks/TASK.yaml`; the router requires the matching dispatch READY receipt and verifies the handoff against the prior role/model/capability plan before exposing the next wave. Re-route without completion claims when stage or signals change, or when inputs change outside the claimed owner's handoff.
+## Choose the entry path
 
-## Orchestration constraints
+1. Read the nearest effective `AGENTS.md`, then inspect `docs/project-status.json` and `.codex/runs/`.
+2. New or uninitialized project: run `python3 "$SKILL_DIR/scripts/orchestrator.py" init PROJECT_DIR --project-name "NAME" --domain "DOMAIN" --complexity Standard`. Use `--domain-pack PACK` only as candidate input; never promote pack content to confirmed project facts.
+3. Existing initialized project with no interrupted run: run `python3 "$SKILL_DIR/scripts/orchestrator.py" doctor PROJECT_DIR`, read the authoritative documents, then create the current-stage plan.
+4. Existing interrupted run: read [recovery.md](references/recovery.md), run `python3 "$SKILL_DIR/scripts/orchestrator.py" resume PROJECT_DIR`, and obey its decision. Never assume an Agent session survived a restart.
+5. Status or evidence request: use `status` or `report`; do not create a new run merely to answer.
 
-- Keep exactly one Orchestrator responsible for global scheduling, state, conflicts, gates, and final synthesis.
-- Orchestrator is the main thread, never another spawned Agent. All professional profiles may exist on disk without consuming a subagent call.
-- Only the Orchestrator may coordinate all professional Agents. Engineering Lead may coordinate only temporary implementation Workers. Other roles must return artifacts and findings to the Orchestrator.
-- A Worker may not spawn another Agent. Give every Worker a bounded objective, owned files, acceptance criteria, and return target.
-- Keep one writer per shared mutable file. Parallelize independent read-heavy audit, exploration, design, architecture, and QA work only when file ownership is disjoint.
-- Development and final QA must be different sessions or Agents at every complexity level.
-- Do not pre-start downstream roles or reviewers. Default to one active subagent; allow two only when the role plan marks independent read-only work safe. Complex never means “start everyone.”
-- Require every delegated role to read project documents; never rely on inherited session memory as the only business context.
-- Do not hard-code a model in a role TOML. Route each Task Package from role, complexity, task type, risk and prior valid failures. A missing required Sol route blocks; it never silently downgrades.
-- Professional Agents and Workers may declare or recommend capabilities but may not download, install, authenticate, or edit runtime configuration themselves. Provision centrally before dispatch.
+Read [migration.md](references/migration.md) before changing an initialized v1.x project. Initialization is non-overwriting; merge one effective project-level `AGENTS.md` without weakening existing rules.
 
-Read [role-contracts.md](references/role-contracts.md) before assigning or changing roles. Project-ready Custom Agent configurations are in `assets/templates/project/.codex/agents/` and are copied during initialization.
+## Establish project truth
 
-## Lifecycle and gates
+1. Read `docs/00-project-context.md`, `01-domain-rules.md`, `02-glossary.md`, `04-prd.md`, `docs/project-status.json`, the current task package, and approved stage documents. Chat history is input, not authoritative memory.
+2. Classify material statements as `CONFIRMED`, `EVIDENCE_INFERRED`, `DEFAULT_ASSUMPTION`, `NOT_APPLICABLE`, or `BLOCKING_UNKNOWN`.
+3. Ask only for an unknown that would materially change scope, safety, acceptance, compliance, licensing, money, permissions, or an irreversible decision. Record reversible defaults instead of interrupting repeatedly.
+4. Requirements maintains business facts, but every role reads them from project documents.
+5. Read [document-contract.md](references/document-contract.md) for the document precedence, version, approval, and decision rules. For a new industry, read [domain-adaptation.md](references/domain-adaptation.md) and optionally [domain-packs.md](references/domain-packs.md).
 
-Use this canonical state sequence:
+## Route only the current work
+
+1. Choose `Simple`, `Standard`, or `Complex` with [complexity-routing.md](references/complexity-routing.md). Complexity describes lifecycle responsibilities, not the number of Agents to launch.
+2. Read [on-demand-role-routing.md](references/on-demand-role-routing.md), persist a validated stage change with `transition` when needed, then preview with `python3 "$SKILL_DIR/scripts/orchestrator.py" plan PROJECT_DIR --quota economy`. Omit `--stage` in the normal flow so the plan cannot drift from persisted lifecycle state.
+3. Persist with `--write` only after inputs are accurate. Activate only `required_now`, in `execution_waves`; profiles on disk are inactive capabilities.
+4. Keep Orchestrator in the main thread. Default to one active subagent; allow two only for a generated two-role read-only wave, or Engineering Lead plus one governed Worker.
+5. Only Orchestrator coordinates professional Agents. Engineering Lead may coordinate temporary frontend/backend/AI/data/test Workers. Workers never create Agents.
+6. Development and final QA must be different Agents or sessions at every complexity level.
+7. Read [role-contracts.md](references/role-contracts.md) before assigning or merging roles.
+
+## Govern a run and Task Packages
+
+1. Run `python3 "$SKILL_DIR/scripts/orchestrator.py" run PROJECT_DIR` once to create the project-local ledger. Read [run-ledger.md](references/run-ledger.md). Orchestrator is its sole writer.
+2. Before dispatch, verify the actual runtime inventory in `.codex/orchestration/runtime-inventory.json`. A model route cannot claim availability from a static assumption.
+3. Create a DRAFT package with `python3 "$SKILL_DIR/scripts/orchestrator.py" task ...`. The generator binds the current open `run_id`; fill business context, inputs, scope, exclusions, deliverables, acceptance criteria, allowed files, validation, evidence locations, capabilities, and return target. Read [task-packages.md](references/task-packages.md).
+4. Route model and reasoning per Task Package using [model-routing.md](references/model-routing.md). Do not bind a permanent model in role TOML. A valid reasoning failure raises effort before capability; environment, permission, auth, missing-input, or unavailable-tool failures do not waste a model escalation.
+5. Resolve capabilities centrally with [capability-resolution.md](references/capability-resolution.md). Agents may declare needs or candidates, but only Orchestrator may approve, lock, install, authenticate, or configure Skills/MCP.
+6. Set a complete reviewed package to `READY_FOR_DISPATCH`, then run `python3 "$SKILL_DIR/scripts/orchestrator.py" preflight PROJECT_DIR tasks/TASK.yaml --record-ready`. Dispatch only when the matching receipt says `READY`.
+7. After each persisted handoff or gate decision, run `python3 "$SKILL_DIR/scripts/orchestrator.py" checkpoint PROJECT_DIR --event HANDOFF_PERSISTED --task-id TASK-ID --artifact PATH --evidence PATH`. A completed owner records artifacts and evidence, sets the Task Package to `COMPLETED`, releases ownership, and exits before the reviewer starts.
+8. Re-plan with the verified completion package. Never consume a blocked or unverified handoff as completion proof.
+
+## Enforce product and release gates
+
+Use the canonical lifecycle:
 
 `BACKLOG → DISCOVERY → REQUIREMENTS_APPROVED → PRODUCT_APPROVED → (UX_READY and UI_READY) + ARCHITECTURE_READY → READY_FOR_BUILD → IN_DEVELOPMENT → CODE_REVIEW → READY_FOR_QA → QA_PASS → RELEASE_READY → DONE`
 
-`BLOCKED` and `REWORK_REQUIREMENTS`, `REWORK_PRODUCT`, `REWORK_UX`, `REWORK_UI`, `REWORK_ARCHITECTURE`, `REWORK_ENGINEERING`, or `REWORK_QA` may interrupt the main path. Restore the previous valid gate only after the documented re-entry condition has evidence.
+Interrupt with `BLOCKED` or the appropriate `REWORK_REQUIREMENTS`, `REWORK_PRODUCT`, `REWORK_UX`, `REWORK_UI`, `REWORK_ARCHITECTURE`, `REWORK_ENGINEERING`, or `REWORK_QA`. Restore a gate only after its documented re-entry evidence exists.
 
-Before changing a stage, read [workflow-gates.md](references/workflow-gates.md) and run:
+- Before changing a stage, read [workflow-gates.md](references/workflow-gates.md) and run `python3 "$SKILL_DIR/scripts/orchestrator.py" transition PROJECT_DIR --target TARGET_STATE`; the command validates the gate before persisting. `BLOCKED` and `REWORK_*` still require their structured reason/defect records.
+- Do not enter `READY_FOR_BUILD` without approved role-page, page-feature, feature-state, front/back-office, permission, and acceptance matrices.
+- Read [product-completeness.md](references/product-completeness.md) for requirements/product review, [ui-quality.md](references/ui-quality.md) for UX/UI, and [architecture-contract.md](references/architecture-contract.md) for API/data/permission work.
+- Use [product-thinking-kernel.md](references/product-thinking-kernel.md) for product decisions. Load [product-lenses.md](references/product-lenses.md) only for a matching trigger.
+- Complete the lightweight Problem, Solution, and Release Evidence checks. Invoke the read-only Quality Governor only when [quality-governance.md](references/quality-governance.md) and the role plan require an independent challenge.
+- Route defects to the earliest responsibility source using [defect-routing.md](references/defect-routing.md).
+- Do not enter `DONE` without [qa-and-completion.md](references/qa-and-completion.md): independent QA evidence, no unaccepted P0/P1 defect, accurate project documents, and explicit accepted risks.
 
-```bash
-python3 scripts/validate_documents.py PROJECT_DIR
-python3 scripts/check_missing_modules.py PROJECT_DIR
-python3 scripts/check_traceability.py PROJECT_DIR
-python3 scripts/check_project_status.py PROJECT_DIR --target READY_FOR_BUILD
-```
+## Boundaries and evaluation
 
-Do not enter `READY_FOR_BUILD` unless the role-page, page-feature, feature-state, front-office/back-office, permission, and acceptance matrices are complete and the applicable upstream gates are approved. Do not enter `DONE` merely because code exists.
+- Read [automation-boundaries.md](references/automation-boundaries.md) before auth, credentials, permissions, downloads, production, external messages, purchases, releases, destructive actions, or irreversible migrations.
+- Read [mcp-guide.md](references/mcp-guide.md) only when an external system is needed; grant least privilege per current task.
+- Run `python3 "$SKILL_DIR/scripts/orchestrator.py" eval` after changing routing policy or recovery behavior. Read [evaluation.md](references/evaluation.md). Offline evals prove deterministic policy behavior, not Agent intelligence or end-to-end product quality.
+- The local control plane creates plans, checks, ledgers, recovery decisions, and reports. It does not claim to spawn or restore Codex Agent sessions, read account quota, bypass authentication, or safely install unknown community code.
 
-## Stage-specific work
-
-- Discovery or unclear domain: read [document-contract.md](references/document-contract.md) and [domain-adaptation.md](references/domain-adaptation.md).
-- Product problem, solution, metric, or prioritization decisions: read [product-thinking-kernel.md](references/product-thinking-kernel.md); load [product-lenses.md](references/product-lenses.md) only for a matching decision trigger.
-- Problem, solution, or release-evidence challenge: read [quality-governance.md](references/quality-governance.md).
-- Requirements and product completeness: read [product-completeness.md](references/product-completeness.md).
-- UX or UI: read [ui-quality.md](references/ui-quality.md).
-- Architecture, permissions, APIs, or data: read [architecture-contract.md](references/architecture-contract.md).
-- Task decomposition: read [task-packages.md](references/task-packages.md).
-- QA, rejection, or rework: read [defect-routing.md](references/defect-routing.md) and [qa-and-completion.md](references/qa-and-completion.md).
-- External tools or services: read [mcp-guide.md](references/mcp-guide.md). Grant each role only the minimum tools and access required for its current task.
-- Automated execution, pause states or credential/trust boundaries: read [automation-boundaries.md](references/automation-boundaries.md).
-
-## Completion contract
-
-Finish only when applicable acceptance criteria have linked evidence, required tests pass, no unaccepted P0/P1 defect remains, project documents and decisions reflect actual behavior, independent QA records `PASS` or an explicitly authorized `PASS_WITH_ACCEPTED_RISKS`, and any release action requiring authorization remains separate. Return the final state, artifacts, evidence, accepted risks, unresolved blockers, and exact next authorization if one is needed.
+Finish by returning final state, artifacts, evidence, tests, accepted risks, unresolved blockers, and the exact next authorization if one remains.

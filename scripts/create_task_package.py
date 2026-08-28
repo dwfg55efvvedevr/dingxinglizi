@@ -10,8 +10,10 @@ import sys
 from pathlib import Path
 
 from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_AGENTS, project_root
-from model_routing import route_fingerprint, route_with_inventory, validate_model_policy
+from model_routing import KNOWN_TASK_TYPES, route_fingerprint, route_with_inventory, validate_model_policy
 from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION
+from run_state import latest_run_id
+from state_io import load_json_object
 
 
 WORKERS = {"frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"}
@@ -99,6 +101,14 @@ def create(
             raise ValueError(f"owner {owner} is not required_now or delegable in the current role plan")
         if stage != role_plan.get("current_stage"):
             raise ValueError("Task Package stage does not match the current role plan stage")
+    attached_run_id = "NOT_ATTACHED"
+    try:
+        candidate_run_id = latest_run_id(root)
+        candidate_run = load_json_object(root / ".codex/runs" / candidate_run_id / "run.json")
+        if candidate_run.get("status") == "OPEN":
+            attached_run_id = candidate_run_id
+    except ValueError:
+        pass
     inventory_path = root / ".codex/orchestration/runtime-inventory.json"
     inventory: dict[str, object] = {}
     try:
@@ -132,10 +142,13 @@ def create(
                 f"invalid capability id {capability_id!r}; use only letters, digits, underscore, and hyphen"
             )
     may_spawn_workers = "true" if owner == "engineering_lead" else "false"
-    content = f'''task_id: {quoted(task_id)}
+    content = f'''schema_version: 2
+run_id: {quoted(attached_run_id)}
+task_id: {quoted(task_id)}
 project: {quoted(project_name)}
 stage: {quoted(stage)}
 status: "DRAFT"
+source_input_fingerprint: {quoted(str(role_plan.get('input_fingerprint') or 'BLOCKING_UNKNOWN'))}
 owner: {quoted(owner)}
 reviewer: {quoted(reviewer)}
 return_to: {quoted(return_to)}
@@ -242,7 +255,7 @@ def main() -> int:
     parser.add_argument("--objective", required=True)
     parser.add_argument("--stage", choices=CANONICAL_STATES + sorted(INTERRUPT_STATES), default="BACKLOG")
     parser.add_argument("--return-to", default="orchestrator")
-    parser.add_argument("--task-type", default="implementation")
+    parser.add_argument("--task-type", choices=sorted(KNOWN_TASK_TYPES), default="implementation")
     parser.add_argument("--risk", action="append", default=[])
     parser.add_argument("--failed-attempts", type=int, default=0)
     parser.add_argument("--failure-type", default="none")

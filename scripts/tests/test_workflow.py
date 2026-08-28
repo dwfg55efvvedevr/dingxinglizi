@@ -162,6 +162,8 @@ class WorkflowTests(unittest.TestCase):
             "Standard",
         )
         self.assertEqual(result.returncode, 0, result.stdout)
+        started = run("run_state.py", "start", self.root)
+        self.assertEqual(started.returncode, 0, started.stdout)
 
     def tearDown(self) -> None:
         self.temp.cleanup()

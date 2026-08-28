@@ -205,6 +205,63 @@ def validate_completed_handoffs(
                 raise ValueError(f"completed handoff reference does not exist: {reference}")
 
 
+def route_project(
+    root: Path,
+    *,
+    stage: str | None = None,
+    quota: str | None = None,
+    signals: list[str] | None = None,
+    completed_roles: list[str] | None = None,
+    completed_tasks: list[str] | None = None,
+    write: bool = False,
+) -> dict:
+    """Route one initialized project without duplicating CLI-only orchestration logic."""
+    signals = signals or []
+    completed_roles = completed_roles or []
+    completed_tasks = completed_tasks or []
+    status = json.loads(read_text(root / "docs/project-status.json"))
+    policy = json.loads(read_text(root / ".codex/orchestration/role-routing-policy.json"))
+    validate_role_policy(policy)
+    selected_stage = stage or status.get("current_state")
+    selected_quota = quota or status.get("execution_control", {}).get("quota_mode") or policy["default_quota_mode"]
+    fingerprint = source_fingerprint(root, selected_stage)
+    normalized_signals = sorted({value.strip().lower() for value in signals if value.strip()})
+    current_plan = load_current_plan(root)
+    validate_completed_handoffs(
+        root, selected_stage, status.get("complexity", ""), selected_quota, normalized_signals,
+        completed_roles, completed_tasks, current_plan,
+    )
+    same_cycle = bool(
+        current_plan.get("status") == "ROUTED"
+        and current_plan.get("current_stage") == selected_stage
+        and current_plan.get("complexity") == status.get("complexity")
+        and current_plan.get("quota_mode") == selected_quota
+        and current_plan.get("signals") == normalized_signals
+        and current_plan.get("input_fingerprint") == fingerprint
+        and current_plan.get("routing_cycle_id")
+    )
+    if completed_roles:
+        cumulative_completed = sorted(set(current_plan.get("completed_roles", [])) | set(completed_roles))
+        cycle_id = str(current_plan["routing_cycle_id"])
+    elif same_cycle:
+        cumulative_completed = sorted(set(current_plan.get("completed_roles", [])))
+        cycle_id = str(current_plan["routing_cycle_id"])
+    else:
+        cumulative_completed = []
+        cycle_id = ""
+    gate_name = {"DISCOVERY": "problem", "READY_FOR_BUILD": "solution", "QA_PASS": "release_evidence"}.get(selected_stage)
+    gate_record = status.get("quality_gates", {}).get(gate_name, {}) if gate_name else {}
+    plan = route_roles(
+        complexity=status.get("complexity", ""), stage=selected_stage, quota_mode=selected_quota,
+        signals=normalized_signals, completed_roles=cumulative_completed,
+        input_fingerprint=fingerprint, quality_gate_record=gate_record,
+        routing_cycle_id=cycle_id,
+    )
+    if write:
+        write_runtime_state(root, status, plan)
+    return plan
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project_dir")
@@ -220,46 +277,11 @@ def main() -> int:
     args = parser.parse_args()
     try:
         root = project_root(args.project_dir)
-        status = json.loads(read_text(root / "docs/project-status.json"))
-        policy = json.loads(read_text(root / ".codex/orchestration/role-routing-policy.json"))
-        validate_role_policy(policy)
-        stage = args.stage or status.get("current_state")
-        quota = args.quota or status.get("execution_control", {}).get("quota_mode") or policy["default_quota_mode"]
-        fingerprint = source_fingerprint(root, stage)
-        normalized_signals = sorted({value.strip().lower() for value in args.signal if value.strip()})
-        current_plan = load_current_plan(root)
-        validate_completed_handoffs(
-            root, stage, status.get("complexity", ""), quota, normalized_signals,
-            args.completed_role, args.completed_task, current_plan,
+        plan = route_project(
+            root, stage=args.stage, quota=args.quota, signals=args.signal,
+            completed_roles=args.completed_role, completed_tasks=args.completed_task,
+            write=args.write,
         )
-        same_cycle = bool(
-            current_plan.get("status") == "ROUTED"
-            and current_plan.get("current_stage") == stage
-            and current_plan.get("complexity") == status.get("complexity")
-            and current_plan.get("quota_mode") == quota
-            and current_plan.get("signals") == normalized_signals
-            and current_plan.get("input_fingerprint") == fingerprint
-            and current_plan.get("routing_cycle_id")
-        )
-        if args.completed_role:
-            cumulative_completed = sorted(set(current_plan.get("completed_roles", [])) | set(args.completed_role))
-            cycle_id = str(current_plan["routing_cycle_id"])
-        elif same_cycle:
-            cumulative_completed = sorted(set(current_plan.get("completed_roles", [])))
-            cycle_id = str(current_plan["routing_cycle_id"])
-        else:
-            cumulative_completed = []
-            cycle_id = ""
-        gate_name = {"DISCOVERY": "problem", "READY_FOR_BUILD": "solution", "QA_PASS": "release_evidence"}.get(stage)
-        gate_record = status.get("quality_gates", {}).get(gate_name, {}) if gate_name else {}
-        plan = route_roles(
-            complexity=status.get("complexity", ""), stage=stage, quota_mode=quota,
-            signals=normalized_signals, completed_roles=cumulative_completed,
-            input_fingerprint=fingerprint, quality_gate_record=gate_record,
-            routing_cycle_id=cycle_id,
-        )
-        if args.write:
-            write_runtime_state(root, status, plan)
         print(json.dumps(plan, ensure_ascii=False, indent=2))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

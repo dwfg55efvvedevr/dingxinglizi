@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "home-services",
+  "version": "1.0.0",
+  "title": "Home services",
+  "objects": ["customer", "service provider", "address", "service catalog", "appointment", "assignment", "service evidence", "complaint", "settlement"],
+  "lifecycles": {"appointment": ["REQUESTED", "CONFIRMED", "ASSIGNED", "IN_SERVICE", "COMPLETED", "CANCELLED", "DISPUTED"], "provider": ["APPLIED", "REVIEWING", "ACTIVE", "SUSPENDED", "OFFBOARDED"]},
+  "risk_signals": ["location privacy", "provider qualification", "scheduling conflict", "service evidence", "complaint and settlement"],
+  "completeness_additions": ["address and availability", "provider onboarding/review", "appointment and assignment", "arrival/service evidence", "cancellation and reschedule", "complaint/refund", "provider settlement"],
+  "test_scenarios": ["provider is double-booked", "customer changes address after assignment", "service completion evidence is missing", "complaint freezes settlement"]
+}

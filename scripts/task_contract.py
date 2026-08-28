@@ -11,6 +11,7 @@ from typing import Iterable
 
 
 TASK_ID_PATTERN = re.compile(r"TASK-[A-Z0-9][A-Z0-9_-]*")
+RUN_ID_PATTERN = re.compile(r"RUN-\d{8}T\d{6}Z-[a-f0-9]{6}")
 
 
 def top_section(text: str, name: str) -> str:
@@ -73,6 +74,29 @@ def validate_task_contract(
     allowed_statuses: Iterable[str] = ("READY_FOR_DISPATCH",),
 ) -> list[str]:
     errors: list[str] = []
+    if integer_scalar(text, "schema_version") != 2:
+        errors.append("BLOCKED_TASK_CONTRACT: schema_version must be 2")
+    run_id = quoted_scalar(text, "run_id")
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        errors.append("BLOCKED_TASK_CONTRACT: run_id must reference a v2 project run")
+    else:
+        runs_root = (root / ".codex/runs").resolve()
+        run_path = (runs_root / run_id / "run.json").resolve()
+        try:
+            run_path.relative_to(runs_root)
+        except ValueError:
+            errors.append("BLOCKED_TASK_CONTRACT: run_id resolves outside the project run ledger")
+        else:
+            try:
+                run_record = json.loads(run_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, json.JSONDecodeError):
+                errors.append("BLOCKED_TASK_CONTRACT: run_id has no valid run record")
+            else:
+                if run_record.get("run_id") != run_id or run_record.get("status") != "OPEN":
+                    errors.append("BLOCKED_TASK_CONTRACT: run_id must reference the current OPEN run")
+    source_input = quoted_scalar(text, "source_input_fingerprint")
+    if not re.fullmatch(r"[a-f0-9]{64}", source_input):
+        errors.append("BLOCKED_TASK_CONTRACT: source_input_fingerprint must be a routed SHA-256 fingerprint")
     task_id = quoted_scalar(text, "task_id")
     if not TASK_ID_PATTERN.fullmatch(task_id):
         errors.append("BLOCKED_TASK_CONTRACT: task_id must match TASK-[A-Z0-9][A-Z0-9_-]*")

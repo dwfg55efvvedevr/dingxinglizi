@@ -14,7 +14,7 @@ from typing import Any
 from task_contract import TASK_ID_PATTERN, list_field, quoted_scalar, task_dispatch_fingerprint, top_section
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _receipt_fingerprint(receipt: dict[str, Any]) -> str:
@@ -46,10 +46,12 @@ def _expected_fields(text: str) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "status": "READY",
+        "run_id": quoted_scalar(text, "run_id"),
         "task_id": quoted_scalar(text, "task_id"),
         "owner": quoted_scalar(text, "owner"),
         "stage": quoted_scalar(text, "stage"),
         "role_plan_fingerprint": quoted_scalar(role_execution, "role_plan_fingerprint"),
+        "source_input_fingerprint": quoted_scalar(text, "source_input_fingerprint"),
         "execution_route_fingerprint": quoted_scalar(execution, "route_fingerprint"),
         "task_dispatch_fingerprint": task_dispatch_fingerprint(text),
         "required_capabilities": sorted(list_field(capabilities, "required")),

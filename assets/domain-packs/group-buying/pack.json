@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "group-buying",
+  "version": "1.0.0",
+  "title": "Regional group buying",
+  "objects": ["supplier", "product", "region", "group campaign", "order", "pickup point", "delivery batch", "verification code", "commission", "settlement"],
+  "lifecycles": {"campaign": ["DRAFT", "OPEN", "CLOSED", "PROCUREMENT", "DELIVERING", "COMPLETED", "CANCELLED"], "order": ["PENDING_PAYMENT", "PAID", "ALLOCATED", "READY_FOR_PICKUP", "VERIFIED", "REFUNDED"]},
+  "risk_signals": ["regional availability", "cutoff consistency", "short supply", "pickup verification", "supplier and leader settlement"],
+  "completeness_additions": ["regional campaign creation", "campaign cutoff", "central procurement", "batch delivery", "pickup receipt and verification", "shortage/refund", "leader commission", "supplier settlement"],
+  "test_scenarios": ["campaign closes while payment is in flight", "supplier short-ships a batch", "verification code is submitted twice", "pickup point rejects an incorrect delivery batch"]
+}

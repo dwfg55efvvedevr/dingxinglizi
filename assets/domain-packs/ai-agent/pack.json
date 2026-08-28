@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "ai-agent",
+  "version": "1.0.0",
+  "title": "AI Agent product",
+  "objects": ["model provider", "agent definition", "prompt version", "tool policy", "knowledge source", "run", "approval", "evaluation", "cost budget"],
+  "lifecycles": {"run": ["QUEUED", "RUNNING", "WAITING_FOR_APPROVAL", "SUCCEEDED", "FAILED", "CANCELLED"], "knowledge_source": ["PENDING", "INDEXING", "READY", "STALE", "FAILED"]},
+  "risk_signals": ["privacy", "prompt injection", "tool side effects", "hallucination", "cost runaway", "provider outage"],
+  "completeness_additions": ["model/provider fallback", "prompt and tool versioning", "human approval", "knowledge freshness", "evaluation and regression", "cost/privacy controls", "uncertainty and failure recovery"],
+  "test_scenarios": ["malicious retrieved content requests a privileged tool", "provider fails after a side effect", "human rejects a pending action", "knowledge index is stale", "budget ceiling stops a long run"]
+}

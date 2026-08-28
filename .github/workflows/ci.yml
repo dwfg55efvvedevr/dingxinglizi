@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile scripts
+        run: python -m py_compile scripts/*.py
+      - name: Run unit tests
+        run: python -m unittest discover -s scripts/tests -v
+      - name: Run deterministic routing evals
+        run: python scripts/orchestrator.py eval
+      - name: Diagnose the Skill package
+        run: python scripts/orchestrator.py doctor
+      - name: Build and smoke-test a release archive
+        run: |
+          git archive --format=zip --output=/tmp/software-project-orchestrator.zip HEAD
+          mkdir -p /tmp/software-project-orchestrator
+          unzip -q /tmp/software-project-orchestrator.zip -d /tmp/software-project-orchestrator
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py doctor
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py init /tmp/spo-smoke-project --project-name "CI Smoke" --domain "CRM" --complexity Standard --domain-pack crm
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py doctor /tmp/spo-smoke-project
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py transition /tmp/spo-smoke-project --target DISCOVERY
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py plan /tmp/spo-smoke-project --quota economy --write
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py run /tmp/spo-smoke-project
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py resume /tmp/spo-smoke-project

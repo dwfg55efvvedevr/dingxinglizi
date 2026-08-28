@@ -23,3 +23,9 @@ No user prompt is needed when facts are sufficient, the task is reversible and i
 Each pause must report the exact missing authority or corrective action. Do not convert it to success, fabricate a connector result, or silently broaden access.
 
 Agents may recommend or discover capabilities, but only the Orchestrator modifies the catalog, trust policy, lock or MCP managed configuration. Engineering Lead may request capabilities for Workers; Workers cannot provision capabilities or spawn Agents.
+
+## What the v2 control plane does not claim
+
+The local Python CLI deterministically prepares plans, Task Packages, validation results, run ledgers, recovery decisions, domain-pack locks, offline evaluations, and reports. Codex runtime tooling performs actual Agent dispatch and session management. The CLI cannot read remaining account quota, prove a model is available without runtime evidence, restore an interrupted Agent session, bypass OAuth/credentials, or determine that unknown downloaded code is trustworthy.
+
+On interruption, use [recovery.md](recovery.md). Never translate a stale session record into permission to launch a duplicate Agent.

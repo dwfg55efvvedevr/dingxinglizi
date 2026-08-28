@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "saas",
+  "version": "1.0.0",
+  "title": "SaaS",
+  "objects": ["organization", "member", "role", "plan", "entitlement", "subscription", "invoice", "meter", "audit event"],
+  "lifecycles": {"subscription": ["TRIAL", "ACTIVE", "PAST_DUE", "SUSPENDED", "CANCELLED"], "membership": ["INVITED", "ACTIVE", "SUSPENDED", "REMOVED"]},
+  "risk_signals": ["tenant isolation", "billing", "entitlement drift", "seat race", "webhook replay"],
+  "completeness_additions": ["organization onboarding", "membership and roles", "plan entitlements", "billing lifecycle", "usage metering", "tenant audit and export"],
+  "test_scenarios": ["downgrade removes excess entitlement safely", "past-due account enters controlled grace period", "replayed billing webhook is idempotent", "member cannot cross tenant boundary"]
+}

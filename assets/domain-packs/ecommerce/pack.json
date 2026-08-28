@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "ecommerce",
+  "version": "1.0.0",
+  "title": "E-commerce",
+  "objects": ["catalog", "SPU", "SKU", "inventory", "cart", "order", "payment", "shipment", "refund", "after-sales case"],
+  "lifecycles": {"order": ["DRAFT", "PLACED", "PAID", "FULFILLING", "SHIPPED", "COMPLETED", "CANCELLED"], "refund": ["REQUESTED", "REVIEWING", "APPROVED", "PROCESSING", "REFUNDED", "REJECTED"]},
+  "risk_signals": ["payment", "inventory consistency", "duplicate submission", "refund reconciliation", "promotion abuse"],
+  "completeness_additions": ["price and promotion calculation", "inventory reservation and release", "payment callback", "shipment tracking", "refund and after-sales", "merchant operations and reconciliation"],
+  "test_scenarios": ["two buyers race for the last unit", "payment succeeds while callback is delayed", "partial refund after partial shipment", "promotion becomes invalid before checkout"]
+}

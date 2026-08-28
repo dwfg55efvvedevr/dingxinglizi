@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "crm",
+  "version": "1.0.0",
+  "title": "CRM",
+  "objects": ["tenant", "lead", "account", "contact", "opportunity", "pipeline stage", "activity", "owner", "import job"],
+  "lifecycles": {"lead": ["NEW", "QUALIFYING", "QUALIFIED", "DISQUALIFIED", "CONVERTED"], "opportunity": ["OPEN", "WON", "LOST"]},
+  "risk_signals": ["tenant isolation", "field-level permission", "ownership transfer", "duplicate merge", "bulk import/export"],
+  "completeness_additions": ["lead assignment", "account/contact relationship", "pipeline configuration", "activity timeline", "data-scope permissions", "import/export and audit"],
+  "test_scenarios": ["salesperson cannot view another team scope", "duplicate import is detected", "owner transfer preserves audit history", "pipeline stage deletion is blocked while referenced"]
+}

@@ -9,7 +9,9 @@
 ## Delivery hierarchy
 
 - One Orchestrator owns global routing, state, gates, conflicts, task packages, and final synthesis.
+- Orchestrator is the sole writer of the global run ledger under `.codex/runs/`. Agents write only their owned artifacts and Task Package handoffs.
 - Orchestrator runs in the main thread; do not spawn a second Orchestrator. Installed role profiles are available capabilities, not active sessions.
+- Before creating a new run, inspect the latest interrupted run. Never assume an Agent session survived a restart; reconcile uncertain sessions before continuing.
 - Before delegation, generate the current-gate role plan. Spawn only `required_now`, and defer the reviewer until owner handoff. A completed owner records artifacts/evidence in its Task Package, marks it `COMPLETED`, and exits; advance only by passing that package as verified handoff proof to the router. Default to one active subagent; allow two only for a generated two-role read-only wave or Engineering Lead plus one governed Worker. Never open two tasks for the same active role.
 - Only Orchestrator may coordinate all professional Agents. Engineering Lead may coordinate only temporary frontend/backend/AI/data/test Workers. Workers may not create Agents.
 - Requirements maintains business facts but is not their private holder. All roles consume project documents.
@@ -32,6 +34,7 @@
 - No unregistered TODO/FIXME, fake button, fake success state, placeholder workflow, fabricated integration response, or sample data presented as real completion.
 - Do not remove or weaken existing tests to make a change pass. Required tests may not be skipped and counted green.
 - Every completion claim includes appropriate evidence: tests, screenshots, logs, request/response, data records, build output, review, or decision references.
+- Run records and evidence must be sanitized. Never store credentials, tokens, customer secrets, unnecessary personal data, or unredacted production logs in `.codex/runs/`.
 - Report deviations, partial completion, blockers, and accepted risks explicitly.
 
 ## UI quality

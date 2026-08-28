@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from _common import project_root, read_text
+from _common import SKILL_ROOT, project_root, read_text
 
 
 MANAGED_START = "# BEGIN software-project-orchestrator managed MCP"
@@ -31,6 +31,11 @@ CODE_SUFFIXES = {
     ".exe", ".bin", ".jar", ".dll", ".dylib", ".so", ".wasm",
 }
 CAPABILITY_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def product_version() -> str:
+    path = SKILL_ROOT / "VERSION"
+    return path.read_text(encoding="utf-8").strip() if path.is_file() else "unknown"
 
 
 def validate_capability_id(capability_id: str) -> None:
@@ -97,6 +102,24 @@ def installed_skill(root: Path, capability_id: str) -> Path | None:
         if valid_skill_manifest(candidate, capability_id):
             return candidate
     return None
+
+
+def runtime_capabilities(root: Path) -> tuple[set[str], set[str], bool]:
+    """Return capability IDs the current host explicitly proved discoverable.
+
+    A file on disk or an MCP config entry is only a prepared artifact. It is not
+    evidence that an already-running Codex session discovered the capability.
+    """
+    inventory = load_json(root / ".codex" / "orchestration" / "runtime-inventory.json")
+    skills = inventory.get("available_skills")
+    mcp_servers = inventory.get("available_mcp_servers")
+    if not isinstance(skills, list) or not all(isinstance(item, str) for item in skills):
+        raise ValueError("runtime-inventory.json available_skills must be a list of capability IDs")
+    if not isinstance(mcp_servers, list) or not all(isinstance(item, str) for item in mcp_servers):
+        raise ValueError("runtime-inventory.json available_mcp_servers must be a list of capability IDs")
+    for capability_id in [*skills, *mcp_servers]:
+        validate_capability_id(capability_id)
+    return set(skills), set(mcp_servers), inventory.get("status") == "VERIFIED"
 
 
 def existing_mcp(root: Path, capability_id: str) -> bool:
@@ -175,7 +198,7 @@ def download_skill(root: Path, capability_id: str, candidate: dict[str, Any], po
     source = candidate["source"]
     repository, commit = source["repository"], source["commit"]
     url = f"https://codeload.github.com/{repository}/zip/{commit}"
-    request = urllib.request.Request(url, headers={"User-Agent": "software-project-orchestrator/1.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": f"software-project-orchestrator/{product_version()}"})
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
             archive = response.read(int(policy.get("maximum_archive_bytes", 10485760)) + 1)
@@ -294,20 +317,37 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
     catalog = load_json(base / "capability-catalog.json").get("capabilities", {})
     lock_path = base / "capability-lock.json"
     lock = load_json(lock_path)
+    runtime_skills, runtime_mcp_servers, runtime_verified = runtime_capabilities(root)
     results: dict[str, Any] = {}
     blocked = False
     for capability_id in requested:
         validate_capability_id(capability_id)
         skill_path = installed_skill(root, capability_id)
         if skill_path:
-            results[capability_id] = {"status": "SATISFIED", "kind": "skill", "path": str(skill_path)}
+            if runtime_verified and capability_id in runtime_skills:
+                results[capability_id] = {
+                    "status": "SATISFIED", "kind": "skill", "path": str(skill_path),
+                    "runtime_verified": True,
+                }
+            else:
+                locked = lock.get("resolved", {}).get(capability_id, {})
+                provisioned = isinstance(locked, dict) and locked.get("kind") == "skill"
+                results[capability_id] = {
+                    "status": "PROVISIONED_PENDING_RUNTIME" if provisioned else "DISCOVERED_NOT_RUNTIME_VERIFIED",
+                    "kind": "skill", "path": str(skill_path), "runtime_verified": False,
+                    "next_action": (
+                        "Start a fresh Agent session, verify that the runtime discovers this Skill, "
+                        "then record its id in runtime-inventory.json available_skills"
+                    ),
+                }
+                blocked = True
             continue
         config_details = mcp_config_details(root, capability_id)
         if config_details is not None:
             locked = lock.get("resolved", {}).get(capability_id, {})
             evidence = locked.get("evidence", {}) if isinstance(locked, dict) else {}
             if (
-                locked.get("status") == "PROVISIONED"
+                locked.get("status") in {"PROVISIONED", "PROVISIONED_PENDING_RUNTIME"}
                 and locked.get("kind") == "mcp_http"
                 and evidence.get("permission") == "read"
                 and evidence.get("enabled_tools")
@@ -316,11 +356,23 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
                 and config_details.get("url") == evidence.get("url")
                 and config_details.get("enabled_tools") == sorted(evidence.get("enabled_tools", []))
             ):
-                results[capability_id] = {
-                    "status": "SATISFIED", "kind": "mcp_http",
-                    "config": str(root / ".codex/config.toml"),
-                    "enabled_tools": evidence["enabled_tools"],
-                }
+                if runtime_verified and capability_id in runtime_mcp_servers:
+                    results[capability_id] = {
+                        "status": "SATISFIED", "kind": "mcp_http",
+                        "config": str(root / ".codex/config.toml"),
+                        "enabled_tools": evidence["enabled_tools"], "runtime_verified": True,
+                    }
+                else:
+                    results[capability_id] = {
+                        "status": "PROVISIONED_PENDING_RUNTIME", "kind": "mcp_http",
+                        "config": str(root / ".codex/config.toml"),
+                        "enabled_tools": evidence["enabled_tools"], "runtime_verified": False,
+                        "next_action": (
+                            "Start a fresh Agent session, verify that the runtime connects this MCP server, "
+                            "then record its id in runtime-inventory.json available_mcp_servers"
+                        ),
+                    }
+                    blocked = True
             else:
                 results[capability_id] = {
                     "status": "BLOCKED_CONFIG_DRIFT",
@@ -351,7 +403,7 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
             blocked = True
             continue
         record = {
-            "status": "PROVISIONED",
+            "status": "PROVISIONED_PENDING_RUNTIME",
             "kind": candidate["kind"],
             "license": candidate.get("license"),
             "resolved_at": datetime.now(timezone.utc).isoformat(),
@@ -359,6 +411,7 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
         }
         results[capability_id] = record
         lock.setdefault("resolved", {})[capability_id] = record
+        blocked = True
     if apply:
         lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return results, blocked

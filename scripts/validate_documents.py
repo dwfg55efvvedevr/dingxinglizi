@@ -68,7 +68,19 @@ def check(root) -> tuple[list[str], list[str]]:
                 validate_role_policy(content)
             if relative.endswith("role-plan.json") and content.get("status") not in {"NOT_ROUTED", "ROUTED"}:
                 errors.append(f"{relative}: status must be NOT_ROUTED or ROUTED")
+            if relative.endswith("role-plan.json"):
+                required_v2_fields = {
+                    "max_active_subagents", "required_now", "execution_waves", "deferred_available",
+                    "quality_gate", "quality_review_status", "inline_actions", "signals", "input_fingerprint",
+                }
+                missing_v2 = sorted(required_v2_fields - set(content))
+                if missing_v2:
+                    errors.append(f"{relative}: missing v2 fields: {', '.join(missing_v2)}")
             if relative.endswith("runtime-inventory.json"):
+                provenance_fields = {"runtime_id", "host_id", "runtime_version", "evidence_source"}
+                missing_provenance = sorted(provenance_fields - set(content))
+                if missing_provenance:
+                    errors.append(f"{relative}: missing v2 provenance fields: {', '.join(missing_provenance)}")
                 if content.get("status") not in {"UNVERIFIED", "VERIFIED"}:
                     errors.append(f"{relative}: status must be UNVERIFIED or VERIFIED")
                 models = content.get("available_models")
@@ -76,6 +88,24 @@ def check(root) -> tuple[list[str], list[str]]:
                     errors.append(f"{relative}: available_models must be a list")
                 elif content.get("status") == "VERIFIED" and not models:
                     errors.append(f"{relative}: VERIFIED inventory requires at least one available model")
+                elif isinstance(models, list):
+                    supported = {"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
+                    unknown = sorted(set(models) - supported)
+                    if unknown:
+                        errors.append(f"{relative}: unsupported model slug(s): {', '.join(unknown)}")
+                for field in ("available_skills", "available_mcp_servers"):
+                    values = content.get(field)
+                    if not isinstance(values, list) or not all(
+                        isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_-]+", value)
+                        for value in values
+                    ):
+                        errors.append(
+                            f"{relative}: {field} must be a list of capability IDs"
+                        )
+                if content.get("status") == "VERIFIED":
+                    for field in ("verified_at", "verified_by", "evidence_source"):
+                        if not content.get(field):
+                            errors.append(f"{relative}: VERIFIED inventory requires {field}")
         except (ValueError, json.JSONDecodeError) as exc:
             errors.append(f"{relative}: invalid JSON: {exc}")
     for relative in REQUIRED_DOCS:
@@ -166,6 +196,19 @@ def check(root) -> tuple[list[str], list[str]]:
     shared = root / ".codex" / "agents" / "shared-rules.md"
     if not shared.is_file():
         errors.append(".codex/agents/shared-rules.md is missing")
+    else:
+        shared_text = read_text(shared)
+        for marker in ("run_id", "PASS_WITH_ACCEPTED_RISKS", "Quality Governor", "Only Orchestrator writes the global run ledger"):
+            if marker not in shared_text:
+                errors.append(f".codex/agents/shared-rules.md: missing v2 contract marker: {marker}")
+    task_template = root / "tasks/TASK.template.yaml"
+    if not task_template.is_file():
+        errors.append("tasks/TASK.template.yaml is missing")
+    else:
+        task_text = read_text(task_template)
+        for marker in ('schema_version: 2', 'run_id: "NOT_ATTACHED"', 'source_input_fingerprint: "BLOCKING_UNKNOWN"'):
+            if marker not in task_text:
+                errors.append(f"tasks/TASK.template.yaml: missing v2 contract marker: {marker}")
     for agent in REQUIRED_AGENTS:
         path = root / ".codex" / "agents" / f"{agent}.toml"
         if not path.is_file():
