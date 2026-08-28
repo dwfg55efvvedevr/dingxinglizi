@@ -12,7 +12,7 @@
 - DISCOVERY and product gates route Requirements/Product Auditor and conditional Quality Governor in ordered waves.
 - UX/UI and Architecture become current only at their gates; parallel work is limited to disjoint read-only packages.
 - Engineering Lead may govern one Worker when the role plan allows it.
-- Architecture/security/permission/migration packages route to Sol-class capability; absence of the verified floor blocks rather than downgrades.
+- Architecture/security/permission/migration packages route to an Expert-class capability, resolved to a verified platform provider/model; absence of the verified floor blocks rather than downgrades.
 - Independent QA owns final acceptance and Release Evidence may trigger Quality Governor.
 
 ## Runnable control-plane example

@@ -1,4 +1,4 @@
 interface:
   display_name: "dingxinglizi"
-  short_description: "On-demand, resumable multi-agent software delivery"
-  default_prompt: "Use $software-project-orchestrator to initialize or safely resume this project, route only the current stage's minimum roles, and deliver it with independent QA."
+  short_description: "Portable, on-demand multi-agent software delivery"
+  default_prompt: "Use $software-project-orchestrator to initialize or safely resume this project, detect the current host, route only the minimum necessary roles and an evidence-backed model tier, preserve project-wide consistency, challenge unsupported assumptions, and require independent QA before completion."

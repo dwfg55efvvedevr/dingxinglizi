@@ -21,6 +21,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from _common import SKILL_ROOT, project_root, read_text
+from project_layout import control_path
+from platform_runtime import PLATFORM_CHOICES, platform_spec, safe_write_target
+from state_io import atomic_write_json, atomic_write_text
 
 
 MANAGED_START = "# BEGIN software-project-orchestrator managed MCP"
@@ -91,15 +94,44 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def installed_skill(root: Path, capability_id: str) -> Path | None:
+def active_platform(root: Path) -> str:
+    manifest = control_path(root, "orchestration/runtime-manifest.json")
+    if manifest.is_file():
+        value = load_json(manifest)
+        platform = value.get("platform")
+        if platform in PLATFORM_CHOICES:
+            return str(platform)
+    directories = {
+        platform: root / str(platform_spec(platform)["project_agent_directory"])
+        for platform in PLATFORM_CHOICES
+    }
+    present = [platform for platform, directory in directories.items() if directory.is_dir()]
+    if len(present) == 1:
+        return present[0]
+    if "codex" in present:
+        return "codex"
+    return ""
+
+
+def installed_skill(root: Path, capability_id: str, platform: str = "") -> Path | None:
     validate_capability_id(capability_id)
+    platform = platform or active_platform(root)
+    project_root = root.resolve()
+    home_root = Path.home().resolve()
     candidates = [
-        root / ".agents" / "skills" / capability_id,
-        Path.home() / ".agents" / "skills" / capability_id,
-        Path.home() / ".codex" / "skills" / capability_id,
+        (project_root, project_root / ".agents" / "skills" / capability_id),
+        (home_root, home_root / ".agents" / "skills" / capability_id),
+        (home_root, home_root / ".codex" / "skills" / capability_id),
     ]
-    for candidate in candidates:
-        if valid_skill_manifest(candidate, capability_id):
+    if platform in PLATFORM_CHOICES:
+        spec = platform_spec(platform)
+        candidates = [
+            (project_root, project_root / str(spec["project_skill_directory"]) / capability_id),
+            (home_root, home_root / str(spec["user_skill_directory"]) / capability_id),
+            *candidates,
+        ]
+    for base, candidate in candidates:
+        if safe_write_target(base, candidate) and valid_skill_manifest(candidate, capability_id):
             return candidate
     return None
 
@@ -110,7 +142,7 @@ def runtime_capabilities(root: Path) -> tuple[set[str], set[str], bool]:
     A file on disk or an MCP config entry is only a prepared artifact. It is not
     evidence that an already-running Codex session discovered the capability.
     """
-    inventory = load_json(root / ".codex" / "orchestration" / "runtime-inventory.json")
+    inventory = load_json(control_path(root, "orchestration/runtime-inventory.json"))
     skills = inventory.get("available_skills")
     mcp_servers = inventory.get("available_mcp_servers")
     if not isinstance(skills, list) or not all(isinstance(item, str) for item in skills):
@@ -129,7 +161,10 @@ def existing_mcp(root: Path, capability_id: str) -> bool:
 
 def mcp_config_details(root: Path, capability_id: str) -> dict[str, Any] | None:
     validate_capability_id(capability_id)
+    root = root.resolve()
     path = root / ".codex" / "config.toml"
+    if not safe_write_target(root, path):
+        raise ValueError("Codex MCP config path traverses a symlink or escapes the project")
     if not path.is_file():
         return None
     text = read_text(path)
@@ -193,7 +228,13 @@ def validate_candidate(capability_id: str, candidate: dict[str, Any], policy: di
     return "BLOCKED_UNSUPPORTED: source type is not safely auto-provisionable"
 
 
-def download_skill(root: Path, capability_id: str, candidate: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
+def download_skill(
+    root: Path,
+    capability_id: str,
+    candidate: dict[str, Any],
+    policy: dict[str, Any],
+    platform: str = "",
+) -> dict[str, Any]:
     validate_capability_id(capability_id)
     source = candidate["source"]
     repository, commit = source["repository"], source["commit"]
@@ -210,8 +251,14 @@ def download_skill(root: Path, capability_id: str, candidate: dict[str, Any], po
     if digest.lower() != source["archive_sha256"].lower():
         raise ValueError(f"Archive SHA-256 mismatch for {capability_id}")
 
-    destination = root / ".agents" / "skills" / capability_id
-    if destination.exists():
+    destination_root = Path(".agents/skills")
+    if platform in PLATFORM_CHOICES:
+        destination_root = Path(str(platform_spec(platform)["project_skill_directory"]))
+    root = root.resolve()
+    destination = root / destination_root / capability_id
+    if not safe_write_target(root, destination):
+        raise ValueError(f"Capability destination traverses a symlink or escapes the project: {destination}")
+    if os.path.lexists(destination):
         raise ValueError(f"Destination already exists and will not be overwritten: {destination}")
     subdirectory = PurePosixPath(source.get("subdirectory", ""))
     selected: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
@@ -251,6 +298,8 @@ def download_skill(root: Path, capability_id: str, candidate: dict[str, Any], po
         if not any(str(relative) == "SKILL.md" for _, relative in selected):
             raise ValueError(f"Selected GitHub directory does not contain SKILL.md for {capability_id}")
         destination.parent.mkdir(parents=True, exist_ok=True)
+        if not safe_write_target(root, destination):
+            raise ValueError(f"Capability destination became unsafe: {destination}")
         staging = Path(tempfile.mkdtemp(prefix=f".{capability_id}-staging-", dir=str(destination.parent)))
         try:
             for member, relative in selected:
@@ -265,7 +314,25 @@ def download_skill(root: Path, capability_id: str, candidate: dict[str, Any], po
                 raise ValueError(
                     f"Installed Skill manifest must have non-empty frontmatter with name: {capability_id} and description"
                 )
-            os.replace(staging, destination)
+            if not safe_write_target(root, destination) or os.path.lexists(destination):
+                raise ValueError(f"Capability destination changed before promotion: {destination}")
+            parent_metadata = os.lstat(destination.parent)
+            flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+            parent_fd = os.open(destination.parent, flags)
+            try:
+                opened_parent = os.fstat(parent_fd)
+                if (
+                    not stat.S_ISDIR(parent_metadata.st_mode)
+                    or (parent_metadata.st_dev, parent_metadata.st_ino)
+                    != (opened_parent.st_dev, opened_parent.st_ino)
+                ):
+                    raise ValueError("Capability destination parent changed before promotion")
+                os.replace(
+                    staging.name, destination.name,
+                    src_dir_fd=parent_fd, dst_dir_fd=parent_fd,
+                )
+            finally:
+                os.close(parent_fd)
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
@@ -274,8 +341,13 @@ def download_skill(root: Path, capability_id: str, candidate: dict[str, Any], po
 
 def configure_mcp(root: Path, capability_id: str, candidate: dict[str, Any]) -> dict[str, Any]:
     validate_capability_id(capability_id)
+    root = root.resolve()
     config = root / ".codex" / "config.toml"
+    if not safe_write_target(root, config):
+        raise ValueError("Codex MCP config path traverses a symlink or escapes the project")
     config.parent.mkdir(parents=True, exist_ok=True)
+    if not safe_write_target(root, config):
+        raise ValueError("Codex MCP config path became unsafe")
     current = config.read_text(encoding="utf-8") if config.exists() else ""
     outside = current
     if MANAGED_START in current and MANAGED_END in current:
@@ -304,7 +376,7 @@ def configure_mcp(root: Path, capability_id: str, candidate: dict[str, Any]) -> 
         current = re.sub(re.escape(MANAGED_START) + r".*?" + re.escape(MANAGED_END), block, current, flags=re.S)
     else:
         current = current.rstrip() + ("\n\n" if current.strip() else "") + block + "\n"
-    config.write_text(current, encoding="utf-8")
+    atomic_write_text(config, current, allowed_root=root)
     return {
         "url": candidate["source"]["url"], "config": str(config),
         "permission": "read", "enabled_tools": tools,
@@ -312,17 +384,17 @@ def configure_mcp(root: Path, capability_id: str, candidate: dict[str, Any]) -> 
 
 
 def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, Any], bool]:
-    base = root / ".codex" / "orchestration"
-    policy = load_json(base / "capability-policy.json")
-    catalog = load_json(base / "capability-catalog.json").get("capabilities", {})
-    lock_path = base / "capability-lock.json"
+    policy = load_json(control_path(root, "orchestration/capability-policy.json"))
+    catalog = load_json(control_path(root, "orchestration/capability-catalog.json")).get("capabilities", {})
+    lock_path = control_path(root, "orchestration/capability-lock.json")
     lock = load_json(lock_path)
     runtime_skills, runtime_mcp_servers, runtime_verified = runtime_capabilities(root)
+    platform = active_platform(root)
     results: dict[str, Any] = {}
     blocked = False
     for capability_id in requested:
         validate_capability_id(capability_id)
-        skill_path = installed_skill(root, capability_id)
+        skill_path = installed_skill(root, capability_id, platform)
         if skill_path:
             if runtime_verified and capability_id in runtime_skills:
                 results[capability_id] = {
@@ -342,7 +414,7 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
                 }
                 blocked = True
             continue
-        config_details = mcp_config_details(root, capability_id)
+        config_details = mcp_config_details(root, capability_id) if platform in {"", "codex"} else None
         if config_details is not None:
             locked = lock.get("resolved", {}).get(capability_id, {})
             evidence = locked.get("evidence", {}) if isinstance(locked, dict) else {}
@@ -390,12 +462,22 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
             results[capability_id] = {"status": reason.split(":", 1)[0], "reason": reason.split(":", 1)[1].strip()}
             blocked = True
             continue
+        if candidate.get("kind") == "mcp_http" and platform not in {"", "codex"}:
+            results[capability_id] = {
+                "status": "BLOCKED_PLATFORM_CONFIGURATION",
+                "reason": (
+                    f"Automatic MCP rendering is not implemented for {platform}; "
+                    "configure it through that host's supported flow and record runtime evidence"
+                ),
+            }
+            blocked = True
+            continue
         if not apply:
             results[capability_id] = {"status": "AUTO_PROVISIONABLE", "kind": candidate["kind"], "candidate": candidate}
             continue
         try:
             if candidate["kind"] == "skill":
-                evidence = download_skill(root, capability_id, candidate, policy)
+                evidence = download_skill(root, capability_id, candidate, policy, platform)
             else:
                 evidence = configure_mcp(root, capability_id, candidate)
         except ValueError as exc:
@@ -413,7 +495,7 @@ def resolve(root: Path, requested: list[str], apply: bool) -> tuple[dict[str, An
         lock.setdefault("resolved", {})[capability_id] = record
         blocked = True
     if apply:
-        lock_path.write_text(json.dumps(lock, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        atomic_write_json(lock_path, lock, allowed_root=root)
     return results, blocked
 
 

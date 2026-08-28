@@ -9,6 +9,7 @@ from typing import Any, Iterable
 
 
 POLICY_VERSION = "1.2.0"
+PLATFORM_POLICY_VERSION = "2.0.0"
 MODELS = {
     "Economy": ("gpt-5.6-luna", "low"),
     "Standard": ("gpt-5.6-terra", "medium"),
@@ -28,6 +29,7 @@ KNOWN_TASK_TYPES = LOW_RISK_TASKS | ADVANCED_TASKS | EXPERT_TASKS
 HIGH_RISK_FLAGS = {
     "security", "privacy", "financial", "payment", "compliance", "production",
     "migration", "concurrency", "consistency", "permissions", "irreversible",
+    "ai_safety", "regulated",
 }
 REASONING_FAILURES = {"quality", "reasoning", "acceptance", "qa_defect", "evidence_conflict"}
 ENVIRONMENT_FAILURES = {"network", "rate_limit", "auth", "permission", "missing_input", "tool_unavailable"}
@@ -222,6 +224,98 @@ def route_with_inventory(
     return route
 
 
+def route_with_platform_manifest(
+    *,
+    manifest: dict[str, Any],
+    availability_source: str,
+    **route_inputs: Any,
+) -> dict[str, Any]:
+    """Resolve the logical route through a verified host-specific runtime manifest.
+
+    The legacy Codex mapping remains available for unmigrated v2 projects, while
+    v3 projects use the adapter inventory and never infer a vendor model from a role.
+    """
+    from platform_runtime import resolve_model
+
+    logical = route_task(available_models=MODELS_BY_PREFERENCE, **route_inputs)
+    if logical["status"] == "BLOCKED_ATTEMPTS_EXHAUSTED":
+        logical.update({
+            "policy_version": PLATFORM_POLICY_VERSION,
+            "platform": manifest.get("platform", ""),
+            "preferred_model": "",
+            "selected_model": "",
+            "selected_provider": "",
+            "fallback_models": [],
+            "available_models": [],
+            "availability_source": availability_source,
+            "availability_verified": False,
+            "actual_model_attested": False,
+        })
+        return logical
+    resolution = resolve_model(
+        manifest,
+        logical["capability_tier"],
+        reasoning_effort=logical["model_reasoning_effort"],
+        risk_flags=logical["risk_flags"],
+        risk_level="high" if set(logical["risk_flags"]) & HIGH_RISK_FLAGS else "normal",
+    )
+    logical.update({
+        "policy_version": PLATFORM_POLICY_VERSION,
+        "status": resolution["status"],
+        "platform": resolution["platform"],
+        "preferred_model": "",
+        "selected_model": resolution["selected_model"],
+        "selected_provider": resolution["selected_provider"],
+        "model_reasoning_effort": resolution["selected_reasoning_effort"] or logical["model_reasoning_effort"],
+        "fallback_models": [],
+        "available_models": [
+            item.get("id", "")
+            for item in manifest.get("model_inventory", {}).get("models", [])
+            if isinstance(item, dict) and item.get("id")
+        ],
+        "availability_source": availability_source,
+        "availability_verified": (
+            manifest.get("runtime", {}).get("status") == "VERIFIED"
+            and manifest.get("model_inventory", {}).get("evidence", {}).get("status") == "VERIFIED"
+        ),
+        "actual_model_attested": resolution.get("actual_model_attested", False),
+    })
+    logical["routing_reasons"].extend(resolution.get("reasons", []))
+    logical["routing_reasons"].extend(resolution.get("limitations", []))
+    return logical
+
+
+def route_without_platform_manifest(**route_inputs: Any) -> dict[str, Any]:
+    """Return a provider-neutral blocked v3 route when runtime evidence is absent.
+
+    Capability and reasoning selection remain deterministic, but no vendor model,
+    provider, or platform is inferred.  A v3 caller must obtain and validate a
+    platform runtime manifest before dispatch can become READY.
+    """
+    logical = route_task(available_models=MODELS_BY_PREFERENCE, **route_inputs)
+    attempts_exhausted = logical["status"] == "BLOCKED_ATTEMPTS_EXHAUSTED"
+    logical.update({
+        "policy_version": PLATFORM_POLICY_VERSION,
+        "routing_mode": "platform_runtime_manifest_required",
+        "status": (
+            "BLOCKED_ATTEMPTS_EXHAUSTED"
+            if attempts_exhausted
+            else "BLOCKED_RUNTIME_MANIFEST_REQUIRED"
+        ),
+        "platform": "unresolved",
+        "preferred_model": "",
+        "selected_model": "",
+        "selected_provider": "",
+        "fallback_models": [],
+        "available_models": [],
+        "availability_source": "missing_platform_runtime_manifest",
+        "availability_verified": False,
+        "actual_model_attested": False,
+    })
+    logical["routing_reasons"].append("verified-platform-runtime-manifest-required")
+    return logical
+
+
 MODELS_BY_PREFERENCE = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
 
 
@@ -232,7 +326,7 @@ def route_fingerprint(route: dict[str, Any]) -> str:
 
 
 def validate_model_policy(policy: dict[str, Any]) -> None:
-    expected = {
+    legacy_expected = {
         "policy_version": POLICY_VERSION,
         "routing_unit": "task_package",
         "runtime_precedence": [
@@ -247,7 +341,22 @@ def validate_model_policy(policy: dict[str, Any]) -> None:
         "silent_high_risk_downgrade": False,
         "agent_toml_model_binding": False,
     }
-    if policy != expected:
+    platform_expected = {
+        "policy_version": PLATFORM_POLICY_VERSION,
+        "routing_unit": "task_package",
+        "runtime_precedence": [
+            "task_package_execution_profile", "verified_platform_runtime_manifest",
+            "explicit_spawn_override", "runtime_agent_default", "parent_inheritance",
+        ],
+        "capability_tiers": ["Economy", "Standard", "Advanced", "Expert", "Exceptional"],
+        "provider_resolution": "verified_runtime_manifest_only",
+        "max_attempts": 3,
+        "max_escalations": 2,
+        "silent_high_risk_downgrade": False,
+        "permanent_role_model_binding": False,
+    }
+    if policy not in (legacy_expected, platform_expected):
         raise ValueError(
-            "model-routing-policy.json does not match the executable router policy version 1.2.0"
+            "model-routing-policy.json does not match the executable router policy "
+            "(supported: v2 legacy or v3 platform-neutral)"
         )

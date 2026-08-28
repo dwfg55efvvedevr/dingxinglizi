@@ -1,42 +1,48 @@
-# Software Project Orchestrator v2.0.0
+# Software Project Orchestrator v3.0.0
 
-这是 `dingxinglizi` 的第二代正式版本。稳定调用名继续保持为 `$software-project-orchestrator`。
+`dingxinglizi` v3.0 makes the stable `$software-project-orchestrator` workflow portable across Codex, Cursor, Claude Code, and OpenCode without pretending that those hosts have identical capabilities.
 
-## 本版重点
+## Highlights
 
-- 新增统一控制入口 `scripts/orchestrator.py`，支持项目初始化、诊断、状态迁移、角色规划、运行记录、中断恢复、报告与评测。
-- 角色按当前阶段和风险按需启用，不会仅因项目复杂就一次启动全部 Agent；开发与最终 QA 始终分离。
-- 每个任务包可按任务性质路由 Luna、Terra、Sol 与思考强度，并对普通质量失败、权限/网络失败和高风险任务采用不同升级策略。
-- 新增项目本地 run ledger、原子化检查点、输入指纹、证据索引、重复运行保护和确定性恢复结论。
-- 新增电商、CRM、SaaS、拼团、AI Agent、家政六个领域包，以及 Simple、Standard、Complex 三套可运行示例。
-- 强化 READY_FOR_BUILD、READY_FOR_QA 与 DONE 门禁；手工修改状态不能绕过完整验证。
-- Skill/MCP 的文件准备与当前运行时真实可用性明确分离，未验证能力会阻塞而不是虚报可用。
+- Platform-neutral project control state under `.dingxinglizi/` for new projects.
+- Non-destructive, hash-verified, idempotent migration from v2 `.codex` state; unmigrated v2 projects remain usable.
+- Native role profile generation for Codex TOML and Cursor, Claude Code, and OpenCode Markdown/frontmatter formats.
+- Separate OpenCode V1 and V2 renderers: V1 uses `permission.task`, V2 uses ordered `permissions/subagent`; automatic selection accepts only a parseable installed 1.x/2.x runtime and unknown versions fail closed.
+- One Orchestrator topology, Engineering Lead → implementation Worker delegation only, no Worker delegation, and independent final QA.
+- Preview-first user/project installer that selects one platform, carries the MIT license, refuses conflicts and symlink/hard-link escapes, and performs no network, authentication, credential, or package-manager action.
+- Platform detection, adapter rendering, L0–L4 doctor, runtime manifest capture, provider/model resolution, and fingerprinted execution receipts.
+- Provider-neutral capability tiers and reasoning effort, resolved only after fresh host re-probe and revalidation of explicitly sourced, hash-bound model inventory evidence.
+- High-risk fail-closed behavior when runtime, model floor, or reasoning support is unverified.
+- v3 rejects the legacy `--available-model` override; a missing runtime manifest yields an unresolved, blocked provider-neutral route instead of a Codex fallback.
+- Project-local supervised Evolution Core retained under the active v2/v3 control directory; candidates remain review-required and non-executable.
 
-## 质量证据
+## Compatibility claims
 
-- 68 项自动化测试通过。
-- 18 个角色、模型、失败升级和安全路由评测通过。
-- Python 3.9、3.11、3.13 GitHub Actions CI 全部通过。
-- 独立 QA 与 Quality Governor 最终结论均为 PASS，P0/P1 缺陷为 0。
-- 官方 Skill 包校验、全新归档安装、文档链接与敏感信息扫描均通过。
+All four adapters have automated schema, rendering, topology, path safety, and control-contract tests. The release host detected and probed Codex CLI. Cursor, Claude Code, and OpenCode were not available for native launch testing on that host, so this release does not claim L4 for them. L4 requires a local execution declaration whose schema/fingerprint and provider/model/reasoning/runtime facts match verified inventory; it is still unsigned local evidence, not cryptographic proof.
 
-## 安装
+## Install
 
 ```bash
-mkdir -p ~/.agents/skills
-git clone --branch v2.0.0 https://github.com/lizi-product-studio/dingxinglizi.git \
-  ~/.agents/skills/software-project-orchestrator
-python3 "$HOME/.agents/skills/software-project-orchestrator/scripts/orchestrator.py" doctor
+git clone --branch v3.0.0 https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
+cd /tmp/dingxinglizi
+python3 scripts/orchestrator.py platform detect
+python3 scripts/orchestrator.py platform install --platform codex --scope user
+python3 scripts/orchestrator.py platform install --platform codex --scope user --apply
 ```
 
-然后在 Codex 中调用：
+Replace `codex` with `cursor` or `claude-code` to install only that adapter. For an offline OpenCode install, use `--platform opencode --opencode-schema v1` or `v2`; an installed, parseable 1.x/2.x runtime may use automatic selection. Existing files are not overwritten unless `--update` is explicit.
 
-```text
-$software-project-orchestrator 初始化这个项目，收集业务背景，判断复杂度，只调用当前阶段必要角色，并在独立 QA 通过后才判定完成。
+## Upgrade from v2
+
+The v3 Skill can operate an existing v2 project in place. Optional migration:
+
+```bash
+python3 scripts/orchestrator.py migrate /path/to/project
+python3 scripts/orchestrator.py migrate /path/to/project --apply
 ```
 
-## 诚实边界
+The first command is a preview. The applied migration copies verified state to `.dingxinglizi/` and leaves `.codex/` unchanged.
 
-本地控制脚本不会直接创建或恢复 Codex Agent 会话，不会读取账户剩余额度、绕过认证、信任未知社区代码，或在未经确认时执行生产写入和不可逆操作。
+## Honest limits
 
-完整说明见仓库的 `README.md`、`USAGE.md` 与 `CHANGELOG.md`。
+The control plane generates and validates contracts; it does not itself authenticate hosts, start or restore arbitrary native Agent sessions, guarantee model availability, infer account quota, configure non-Codex MCP hosts, or trust unknown community code. Runtime claims require runtime evidence. Production, credentials, external writes, public release, purchases, and destructive changes remain separately authorized actions.

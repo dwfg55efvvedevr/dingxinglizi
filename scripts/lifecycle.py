@@ -10,7 +10,7 @@ from typing import Any
 
 from _common import CANONICAL_STATES, project_root, read_text
 from check_project_status import check as check_project_status
-from state_io import atomic_write_json, atomic_write_text
+from state_io import atomic_write_json, atomic_write_text, safe_project_path
 
 
 def transition(root: Path, target: str) -> dict[str, Any]:
@@ -19,7 +19,7 @@ def transition(root: Path, target: str) -> dict[str, Any]:
         raise ValueError(
             "transition accepts canonical states only; BLOCKED and REWORK_* require their structured reason/defect records"
         )
-    status_path = root / "docs/project-status.json"
+    status_path = safe_project_path(root, "docs/project-status.json")
     original_text = read_text(status_path)
     status = json.loads(original_text)
     current = status.get("current_state")
@@ -48,10 +48,10 @@ def transition(root: Path, target: str) -> dict[str, Any]:
         status["blocked"] = None
     if isinstance(current, str) and current.startswith("REWORK_"):
         status["rework"] = None
-    atomic_write_json(status_path, status)
+    atomic_write_json(status_path, status, allowed_root=root)
     persisted_errors, persisted_warnings = check_project_status(root, None)
     if persisted_errors:
-        atomic_write_text(status_path, original_text)
+        atomic_write_text(status_path, original_text, allowed_root=root)
         raise RuntimeError(
             "Persisted lifecycle state failed validation: " + "; ".join(persisted_errors)
         )

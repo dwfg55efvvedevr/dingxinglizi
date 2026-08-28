@@ -2,7 +2,7 @@
 
 The core workflow works with local files and standard tools. Add MCP only when it provides data or an action the current task actually needs. Absence of MCP must never prevent project initialization, routing, document validation, task generation, or local QA planning.
 
-MCP resolution is centralized. An Agent declares a required capability in its Task Package; Orchestrator reuses an installed server or runs the project Capability Broker before the Agent is spawned. Agents do not independently edit `.codex/config.toml` or connect accounts. See [capability-resolution.md](capability-resolution.md).
+MCP resolution is centralized. An Agent declares a required capability in its Task Package; Orchestrator reuses a runtime-verified server or runs the project Capability Broker before the Agent is spawned. Agents do not independently edit host configuration or connect accounts. See [capability-resolution.md](capability-resolution.md).
 
 | Capability | Use when | Typical roles | Minimum access |
 |---|---|---|---|
@@ -25,6 +25,6 @@ MCP resolution is centralized. An Agent declares a required capability in its Ta
 
 ## Automatic configuration boundary
 
-The Broker may write a managed block to project `.codex/config.toml` only for an allowlisted, credential-free HTTPS MCP with a read-only permission ceiling and an explicit `enabled_tools` allowlist. It refuses to overwrite an unmanaged server section. OAuth, API keys, private services, STDIO packages, locally installed executables, write scopes, database credentials and deployment access stay blocked until explicitly authorized and configured through the supported host flow.
+The Broker may write a managed block to project `.codex/config.toml` only when the selected platform is Codex and the candidate is an allowlisted, credential-free HTTPS MCP with a read-only permission ceiling and explicit `enabled_tools`. It refuses to overwrite an unmanaged server section. Cursor, Claude Code, and OpenCode configuration is intentionally not synthesized: use the selected host's supported setup and authorization flow, then record fresh runtime evidence. OAuth, API keys, private services, STDIO packages, locally installed executables, write scopes, database credentials and deployment access stay blocked until explicitly authorized.
 
-New or changed MCP configuration may require a fresh Agent session or application restart before tools are visible. Treat validated configuration as `PROVISIONED_PENDING_RUNTIME`; treat it as usable only after runtime discovery confirms it and the Orchestrator records the server ID in `runtime-inventory.json`.
+New or changed MCP configuration may require a fresh Agent session or application restart before tools are visible. Treat validated configuration as `PROVISIONED_PENDING_RUNTIME`; treat it as usable only after runtime discovery confirms it and the Orchestrator records the server ID in the active control root's runtime inventory.

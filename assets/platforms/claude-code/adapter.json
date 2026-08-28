@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "platform": "claude-code",
+  "agent_format": "markdown_yaml_frontmatter",
+  "project_agent_directory": ".claude/agents",
+  "project_skill_directory": ".claude/skills",
+  "user_agent_directory": ".claude/agents",
+  "user_skill_directory": ".claude/skills",
+  "verified_fields": ["name", "description", "model", "permissionMode", "disallowedTools"],
+  "model_binding": "runtime_or_frontmatter_override",
+  "topology_enforcement": "prompt_with_agent_tool_denial"
+}

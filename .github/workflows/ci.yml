@@ -28,15 +28,32 @@ jobs:
         run: python scripts/orchestrator.py eval
       - name: Diagnose the Skill package
         run: python scripts/orchestrator.py doctor
+      - name: Test all platform adapters
+        shell: bash
+        run: |
+          python scripts/orchestrator.py platform detect
+          for platform in codex cursor claude-code opencode; do
+            target="/tmp/dxl-$platform"
+            schema_args=()
+            if [ "$platform" = opencode ]; then schema_args=(--opencode-schema v2); fi
+            python scripts/orchestrator.py platform install "$target" --platform "$platform" --scope project "${schema_args[@]}"
+            python scripts/orchestrator.py platform install "$target" --platform "$platform" --scope project --apply "${schema_args[@]}"
+            python scripts/orchestrator.py platform doctor "$target" --platform "$platform" --scope project --require-level L2 "${schema_args[@]}"
+            project="/tmp/dxl-project-$platform"
+            python scripts/orchestrator.py init "$project" --project-name "CI $platform" --domain CRM --complexity Standard --platform "$platform" "${schema_args[@]}"
+            python scripts/orchestrator.py doctor "$project"
+          done
       - name: Build and smoke-test a release archive
         run: |
           git archive --format=zip --output=/tmp/software-project-orchestrator.zip HEAD
           mkdir -p /tmp/software-project-orchestrator
           unzip -q /tmp/software-project-orchestrator.zip -d /tmp/software-project-orchestrator
+          test ! -e /tmp/software-project-orchestrator/AGENTS.md
           python /tmp/software-project-orchestrator/scripts/orchestrator.py doctor
-          python /tmp/software-project-orchestrator/scripts/orchestrator.py init /tmp/spo-smoke-project --project-name "CI Smoke" --domain "CRM" --complexity Standard --domain-pack crm
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py init /tmp/spo-smoke-project --project-name "CI Smoke" --domain "CRM" --complexity Standard --domain-pack crm --platform codex
           python /tmp/software-project-orchestrator/scripts/orchestrator.py doctor /tmp/spo-smoke-project
           python /tmp/software-project-orchestrator/scripts/orchestrator.py transition /tmp/spo-smoke-project --target DISCOVERY
           python /tmp/software-project-orchestrator/scripts/orchestrator.py plan /tmp/spo-smoke-project --quota economy --write
           python /tmp/software-project-orchestrator/scripts/orchestrator.py run /tmp/spo-smoke-project
           python /tmp/software-project-orchestrator/scripts/orchestrator.py resume /tmp/spo-smoke-project
+          python /tmp/software-project-orchestrator/scripts/orchestrator.py evolution status /tmp/spo-smoke-project

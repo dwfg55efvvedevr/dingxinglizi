@@ -1,69 +1,47 @@
-# Task-level model routing
+# Platform-neutral model routing
 
-Route a model for each Task Package, not permanently for a role. A temporary Worker may use Luna for a bounded mechanical scan; professional role floors normally begin at Terra. Normal analysis/implementation uses Terra, while security, permissions, migrations, concurrency, production risk, complex architecture, or independent high-impact QA can require Sol.
+Route per Task Package, never permanently per role. The portable policy decides required capability and reasoning; a selected platform resolves those logical requirements to a concrete provider/model from verified runtime evidence.
 
-## Stable routing contract
+## Logical capability tiers
 
-Run `python3 "$SKILL_DIR/scripts/route_task.py"` or use `python3 "$SKILL_DIR/scripts/create_task_package.py"`, which calls the same pure routing function. Identical structured inputs and policy version produce the same route. The route records its policy, capability tier, preferred and selected model, reasoning effort, risk flags, reason codes, attempts, fallback and downgrade policy.
+`ECONOMY < STANDARD < ADVANCED < EXPERT < EXCEPTIONAL`
 
-Before task creation, Orchestrator records a verified runtime model snapshot in `.codex/orchestration/runtime-inventory.json`. The initialized file is deliberately `UNVERIFIED`; it does not pretend every account or host exposes every model. Command-line callers may provide the same evidence explicitly by repeating `--available-model` when creating and preflighting a task. An empty or unverified snapshot blocks dispatch.
+- Economy: bounded extraction, scanning, classification, and mechanical low-risk work.
+- Standard: routine analysis, documentation, and narrow implementation.
+- Advanced: normal professional implementation/design with moderate ambiguity.
+- Expert: architecture, security, permissions, migrations, concurrency, high-impact QA, or repeated valid reasoning failure.
+- Exceptional: rare, explicitly escalated work after schema conflict, high-impact ambiguity, or repeated valid failure; never the default.
 
-```bash
-python3 "$SKILL_DIR/scripts/route_task.py" \
-  --complexity Complex \
-  --task-type architecture \
-  --role architect \
-  --risk security \
-  --risk migration
-```
+Reasoning effort is a separate requirement: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. A provider mapping may expose only a subset.
 
-Supported task types are `scan`, `extract`, `format`, `documentation`, `test_run`, `requirements`, `product_audit`, `ux`, `ui`, `implementation`, `code_review`, `qa`, `problem_quality`, `solution_challenge`, `release_quality`, `architecture`, `security_review`, `permission_design`, `migration_design`, and `release_review`. Unknown task or risk names fail closed instead of silently receiving a cheaper route.
+## Evidence chain
 
-The composition rule takes the highest requirement from role, project complexity, task type, and hard risk flags. The complete result receives a SHA-256 `route_fingerprint`; launch preflight recomputes it and compares every launch-critical field so inheritance, attempts, fallback or reasoning policy cannot be silently changed.
+1. `platform detect` proves only an executable/version probe.
+2. A runtime manifest records platform, executable evidence, model inventory source, model IDs, providers, tiers, and supported efforts.
+3. `--models-verified` requires an explicit file and evidence source; an unverified declaration cannot authorize a high-risk route.
+4. `model-resolve` selects the lowest available model meeting or exceeding the requested tier and, where required, the exact reasoning effort.
+5. A Task Package records platform, provider, selected model, reasoning, policy versions, risks, and `actual_model_attested: false` before launch.
+6. A real host execution receipt separately attests actual provider/model/reasoning/runtime; only then can platform compatibility reach L4.
 
-| Tier | Default model | Default effort | Typical work |
-|---|---|---|---|
-| Economy | `gpt-5.6-luna` | low | extraction, formatting, deterministic scans and fixed test runs |
-| Standard | `gpt-5.6-terra` | medium | bounded analysis and ordinary implementation |
-| Advanced | `gpt-5.6-terra` | high | cross-file integration, product work, code review and normal independent QA |
-| Expert | `gpt-5.6-sol` | high | architecture, permissions, security, migrations and complex delivery control |
-| Exceptional | `gpt-5.6-sol` | xhigh | repeated semantic failure or unusually consequential ambiguity |
+For policy `2.0.0`, `task` and `preflight` reject the legacy `--available-model` override. Without a currently valid manifest, the generated route is `BLOCKED_RUNTIME_MANIFEST_REQUIRED` with unresolved platform/provider/model fields. This prevents a caller-supplied vendor slug from being promoted into verified runtime evidence.
 
-Role floors prevent a high-impact coordinator or reviewer from being routed like a mechanical Worker:
+## Risk floors
 
-| Role | Simple | Standard | Complex |
-|---|---|---|---|
-| Orchestrator | Terra medium | Terra high | Sol high |
-| Requirements / Product Auditor / UX / UI | Terra medium | Terra medium | Terra high |
-| Architect | Terra high | Terra high | Sol high |
-| Engineering Lead | Terra medium | Terra high | Sol high |
-| Independent QA | Terra high | Terra high | Sol high |
-| Quality Governor | Terra high | Terra high | Sol high |
-| Temporary Worker | Luna for mechanical tasks; task/risk rules may raise it | Luna/Terra | Terra or Sol when risk requires |
+Security, privacy, financial/payment, compliance, production, migration, permissions, irreversible change, regulated work, and AI-safety flags are high-risk. High-risk resolution requires verified executable and model inventory evidence and cannot silently bind a missing reasoning level.
 
-These are floors, not permanent role bindings. Hard risk flags and repeated valid quality failure may raise them.
-
-The router never uses `max` or `ultra` by default. Add them only after project-specific evaluation shows a material benefit.
-
-## Runtime precedence and inheritance
-
-Keep all role TOML files free of `model` and `model_reasoning_effort`. This prevents static role settings from defeating task-level routing. Runtime precedence is:
-
-1. resolved `execution_profile` in the Task Package;
-2. Orchestrator's explicit `model` and `reasoning_effort` values when spawning the Agent;
-3. a runtime Agent default, if configured outside this Skill;
-4. parent inheritance only when no explicit task route exists.
-
-For governed work, steps 1 and 2 are mandatory. Before spawning, the Orchestrator must confirm `execution_profile.status: ROUTED`, then pass `selected_model` and `model_reasoning_effort` explicitly. If the actual launch cannot match the route, record `ROUTE_MISMATCH` and do not claim task completion.
+If no model meets the floor, return `BLOCKED_MODEL_UNAVAILABLE`. If the runtime or inventory is unverified for high risk, return `BLOCKED_UNVERIFIED_HIGH_RISK_RUNTIME`. If the selected model cannot bind the required effort, return `BLOCKED_REASONING_EFFORT_UNAVAILABLE`.
 
 ## Failure escalation
 
-Classify failure before changing the model:
+Classify failure before escalation:
 
-- `network`, `rate_limit`, `auth`, `permission`, `missing_input`, `tool_unavailable`: repair or block the environment; never upgrade the model merely because a tool failed.
-- `quality`, `reasoning`, `acceptance`, `qa_defect`, `evidence_conflict`: first valid failure raises reasoning effort; a repeated valid failure raises one capability tier.
-- Three failed attempts: stop and return to Orchestrator for re-planning, source-level rework, or explicit user direction. Never retry indefinitely.
+- quality/reasoning failure: increase reasoning within the current capability when supported, then raise capability tier;
+- context-limit failure: narrow the task, improve inputs, or split the package before model escalation;
+- network, authentication, permission, missing input, unavailable tool, quota, or rate limit: fix the environment or block; do not spend a model escalation;
+- incorrect problem or acceptance contract: route back to the responsible upstream role, not to a stronger implementation model.
 
-High-risk tasks that require Sol become `BLOCKED_MODEL_UNAVAILABLE` when Sol is unavailable. They never silently fall back to Terra or Luna. Low-risk mechanical tasks may use a recorded controlled downgrade. Any later downgrade requires a new, narrower, lower-risk Task Package; it may not rewrite the route of a failed task in place.
+Escalation is bounded by policy attempts and must preserve failure evidence. A later lower route needs a new, genuinely narrower/lower-risk Task Package; never rewrite a failed high-risk route in place.
 
-Model choice is reproducible policy selection, not a guarantee that model output is deterministic. Keep tests and independent QA as the final quality control.
+## v2 Codex compatibility
+
+Unmigrated v2 Codex projects retain policy `1.2.0`, the legacy `--available-model` snapshot input, and its Luna/Terra/Sol mapping. v3 accepts that exact policy for backward compatibility. Those slugs are not portable defaults and must not appear in platform-neutral policy `2.0.0` or other providers' role files.

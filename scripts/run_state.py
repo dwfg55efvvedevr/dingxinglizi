@@ -15,6 +15,7 @@ from role_routing import role_plan_fingerprint
 from route_roles import source_fingerprint
 from check_project_status import check as check_project_status
 from dispatch_receipt import validate_dispatch_receipt
+from project_layout import control_path
 from state_io import append_jsonl, atomic_write_json, atomic_write_text, load_json_object, safe_project_path, utc_now
 from task_contract import list_field, quoted_scalar, top_section, validate_task_contract
 
@@ -29,7 +30,7 @@ EVENT_TYPES = {
 
 
 def _runs_root(root: Path, create: bool = False) -> Path:
-    path = safe_project_path(root, ".codex/runs")
+    path = control_path(root, "runs")
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return path
@@ -38,12 +39,18 @@ def _runs_root(root: Path, create: bool = False) -> Path:
 def _run_dir(root: Path, run_id: str) -> Path:
     if not RUN_ID_PATTERN.fullmatch(run_id):
         raise ValueError(f"Invalid run ID: {run_id}")
-    path = safe_project_path(root, Path(".codex/runs") / run_id)
+    path = control_path(root, Path("runs") / run_id)
     try:
         path.relative_to(_runs_root(root))
     except ValueError as exc:
         raise ValueError(f"Run path escapes ledger: {run_id}") from exc
     return path
+
+
+def _run_file(root: Path, run_id: str, name: str) -> Path:
+    if "/" in name or "\\" in name or name in {"", ".", ".."}:
+        raise ValueError(f"Invalid run file name: {name}")
+    return control_path(root, Path("runs") / run_id / name)
 
 
 def _new_run_id() -> str:
@@ -54,7 +61,7 @@ def _new_run_id() -> str:
 def _project_snapshot(root: Path) -> dict[str, Any]:
     status = load_json_object(root / "docs/project-status.json")
     stage = str(status.get("current_state", ""))
-    plan_path = root / ".codex/orchestration/role-plan.json"
+    plan_path = control_path(root, "orchestration/role-plan.json")
     plan = load_json_object(plan_path) if plan_path.is_file() else {}
     fingerprint = source_fingerprint(root, stage)
     return {
@@ -172,7 +179,7 @@ def _normalize_refs(root: Path, values: list[str] | None, label: str) -> list[st
 
 
 def _validated_current_plan(root: Path, snapshot: dict[str, Any]) -> dict[str, Any]:
-    plan = load_json_object(root / ".codex/orchestration/role-plan.json")
+    plan = load_json_object(control_path(root, "orchestration/role-plan.json"))
     if plan.get("status") != "ROUTED":
         raise ValueError("A trusted checkpoint requires a persisted current-stage role plan")
     if plan.get("plan_fingerprint") != role_plan_fingerprint(plan):
@@ -265,8 +272,15 @@ def checkpoint(
     evidence = _normalize_refs(root, evidence_refs, "evidence")
     selected = run_id or latest_run_id(root)
     directory = _run_dir(root, selected)
-    run = load_json_object(directory / "run.json")
-    prior = load_json_object(directory / "checkpoint.json")
+    run_files = {
+        name: _run_file(root, selected, name)
+        for name in (
+            "run.json", "checkpoint.json", "project-snapshot.json",
+            "routing-decisions.json", "evidence-index.json", "events.jsonl",
+        )
+    }
+    run = load_json_object(run_files["run.json"])
+    prior = load_json_object(run_files["checkpoint.json"])
     if run.get("schema_version") != RUN_SCHEMA_VERSION or prior.get("run_id") != selected:
         raise ValueError("Run schema or checkpoint lineage is invalid")
     if run.get("status") == "DONE":
@@ -337,7 +351,7 @@ def checkpoint(
         "resume_decision": "DONE" if status == "DONE" else ("BLOCKED" if status == "BLOCKED" else "RESUME_SAFE"),
         "next_action": current_checkpoint["next_safe_action"],
     })
-    index = load_json_object(directory / "evidence-index.json")
+    index = load_json_object(run_files["evidence-index.json"])
     for key, refs in (("artifacts", artifacts), ("evidence", evidence)):
         entries = index.get(key, [])
         if not isinstance(entries, list):
@@ -347,7 +361,7 @@ def checkpoint(
             if reference not in known:
                 entries.append({"ref": reference, "task_id": task_id, "recorded_at": now, "sequence": sequence})
         index[key] = entries
-    routing = load_json_object(directory / "routing-decisions.json")
+    routing = load_json_object(run_files["routing-decisions.json"])
     history = routing.get("history", [])
     if not isinstance(history, list):
         raise ValueError("Invalid routing decision history")
@@ -366,12 +380,12 @@ def checkpoint(
         "required_now": snapshot.get("required_now", []),
         "history": history,
     })
-    atomic_write_json(directory / "project-snapshot.json", snapshot)
-    atomic_write_json(directory / "routing-decisions.json", routing)
-    atomic_write_json(directory / "evidence-index.json", index)
-    atomic_write_json(directory / "checkpoint.json", current_checkpoint)
-    atomic_write_json(directory / "run.json", run)
-    append_jsonl(directory / "events.jsonl", {
+    atomic_write_json(run_files["project-snapshot.json"], snapshot)
+    atomic_write_json(run_files["routing-decisions.json"], routing)
+    atomic_write_json(run_files["evidence-index.json"], index)
+    atomic_write_json(run_files["checkpoint.json"], current_checkpoint)
+    atomic_write_json(run_files["run.json"], run)
+    append_jsonl(run_files["events.jsonl"], {
         "sequence": sequence,
         "timestamp": now,
         "run_id": selected,
@@ -445,7 +459,7 @@ def resume(root: Path, run_id: str | None = None) -> dict[str, Any]:
     elif current.get("input_fingerprint") != checkpoint.get("input_fingerprint"):
         decision, reason = "REPLAN_REQUIRED", "Current-stage source documents changed after the checkpoint"
     else:
-        plan_path = root / ".codex/orchestration/role-plan.json"
+        plan_path = control_path(root, "orchestration/role-plan.json")
         plan = load_json_object(plan_path) if plan_path.is_file() else {}
         stored = plan.get("plan_fingerprint", "")
         if plan.get("status") == "ROUTED" and stored != role_plan_fingerprint(plan):
@@ -499,7 +513,7 @@ def report(root: Path, run_id: str | None = None, write: bool = True) -> tuple[s
         "- `project-snapshot.json`: project state captured at run creation",
         "- `evidence-index.json`: artifact and acceptance-evidence references",
         "- `routing-decisions.json`: role-plan lineage used by this run", "",
-        "This report does not claim that the Python control plane started or restored a Codex Agent session.", "",
+        "This report does not claim that the Python control plane started or restored a native host Agent session.", "",
     ]
     content = "\n".join(lines)
     path = directory / "final-report.md"

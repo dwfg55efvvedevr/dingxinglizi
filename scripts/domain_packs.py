@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from _common import SKILL_ROOT, project_root
-from state_io import atomic_write_json, atomic_write_text, load_json_object, utc_now
+from project_layout import control_path
+from state_io import atomic_write_json, atomic_write_text, load_json_object, safe_project_path, utc_now
 
 
 PACK_ROOT = SKILL_ROOT / "assets" / "domain-packs"
@@ -99,20 +100,21 @@ source_of_truth: false
 
 
 def apply_pack(root: Path, pack_id: str, dry_run: bool = False) -> dict[str, Any]:
+    root = Path(root).resolve()
     required_project_files = (
         root / "docs/project-status.json",
-        root / ".codex/orchestration/role-routing-policy.json",
-        root / ".codex/orchestration/model-routing-policy.json",
+        control_path(root, "orchestration/role-routing-policy.json"),
+        control_path(root, "orchestration/model-routing-policy.json"),
     )
-    missing = [str(path.relative_to(root)) for path in required_project_files if not path.is_file()]
+    missing = [str(path.relative_to(root.resolve())) for path in required_project_files if not path.is_file()]
     if missing:
         raise ValueError(
             "Domain packs require an initialized project; missing: " + ", ".join(missing)
         )
     pack = load_pack(pack_id)
     digest = pack_hash(pack_id)
-    doc = root / "docs/domain-pack.md"
-    lock = root / ".codex/orchestration/domain-lock.json"
+    doc = safe_project_path(root, "docs/domain-pack.md")
+    lock = control_path(root, "orchestration/domain-lock.json")
     proposed_lock = {
         "schema_version": 1,
         "pack_id": pack_id,
@@ -132,8 +134,8 @@ def apply_pack(root: Path, pack_id: str, dry_run: bool = False) -> dict[str, Any
         raise ValueError(f"Domain pack document already exists and will not be overwritten: {doc}")
     result = {"status": "DRY_RUN" if dry_run else "APPLIED", "pack": pack_id, "sha256": digest, "document": str(doc), "lock": str(lock)}
     if not dry_run:
-        atomic_write_text(doc, render_pack(pack, digest))
-        atomic_write_json(lock, proposed_lock)
+        atomic_write_text(doc, render_pack(pack, digest), allowed_root=root)
+        atomic_write_json(lock, proposed_lock, allowed_root=root)
     return result
 
 

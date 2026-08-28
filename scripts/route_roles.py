@@ -6,15 +6,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from _common import CANONICAL_STATES, INTERRUPT_STATES, project_root, read_text
 from dispatch_receipt import validate_dispatch_receipt
+from project_layout import control_path
 from role_routing import route_roles, validate_role_policy
+from state_io import atomic_write_text, safe_project_path
 from task_contract import list_field, quoted_scalar, top_section, validate_task_contract
 
 
@@ -79,8 +79,8 @@ def source_fingerprint(root: Path, stage: str) -> str:
 
 def write_runtime_state(root: Path, status: dict, plan: dict) -> None:
     """Persist quota and role plan together, rolling back status if the second replace fails."""
-    status_path = root / "docs/project-status.json"
-    plan_path = root / ".codex/orchestration/role-plan.json"
+    status_path = safe_project_path(root, "docs/project-status.json")
+    plan_path = control_path(root, "orchestration/role-plan.json")
     status_bytes = status_path.read_bytes()
     execution = status.setdefault("execution_control", {})
     maximum = int(plan["max_active_subagents"])
@@ -97,30 +97,18 @@ def write_runtime_state(root: Path, status: dict, plan: dict) -> None:
     status["updated_by"] = "orchestrator"
     persisted = dict(plan)
     persisted["generated_at"] = datetime.now(timezone.utc).isoformat()
-    status_payload = (json.dumps(status, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    plan_payload = (json.dumps(persisted, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    temp_paths: list[Path] = []
+    status_payload = json.dumps(status, ensure_ascii=False, indent=2) + "\n"
+    plan_payload = json.dumps(persisted, ensure_ascii=False, indent=2) + "\n"
     try:
-        for destination, payload in ((status_path, status_payload), (plan_path, plan_payload)):
-            with tempfile.NamedTemporaryFile(dir=destination.parent, prefix=f".{destination.name}.", delete=False) as handle:
-                handle.write(payload)
-                handle.flush()
-                os.fsync(handle.fileno())
-                temp_paths.append(Path(handle.name))
-        os.replace(temp_paths[0], status_path)
-        try:
-            os.replace(temp_paths[1], plan_path)
-        except OSError:
-            status_path.write_bytes(status_bytes)
-            raise
-    finally:
-        for path in temp_paths:
-            if path.exists():
-                path.unlink()
+        atomic_write_text(status_path, status_payload, allowed_root=root)
+        atomic_write_text(plan_path, plan_payload, allowed_root=root)
+    except (OSError, ValueError):
+        atomic_write_text(status_path, status_bytes.decode("utf-8"), allowed_root=root)
+        raise
 
 
 def load_current_plan(root: Path) -> dict:
-    path = root / ".codex/orchestration/role-plan.json"
+    path = control_path(root, "orchestration/role-plan.json")
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
@@ -220,7 +208,7 @@ def route_project(
     completed_roles = completed_roles or []
     completed_tasks = completed_tasks or []
     status = json.loads(read_text(root / "docs/project-status.json"))
-    policy = json.loads(read_text(root / ".codex/orchestration/role-routing-policy.json"))
+    policy = json.loads(read_text(control_path(root, "orchestration/role-routing-policy.json")))
     validate_role_policy(policy)
     selected_stage = stage or status.get("current_state")
     selected_quota = quota or status.get("execution_control", {}).get("quota_mode") or policy["default_quota_mode"]
@@ -273,7 +261,7 @@ def main() -> int:
         "--completed-task", action="append", default=[], metavar="ROLE=PATH",
         help="Completed Task Package proving the role handoff; repeat with --completed-role",
     )
-    parser.add_argument("--write", action="store_true", help="Persist .codex/orchestration/role-plan.json")
+    parser.add_argument("--write", action="store_true", help="Persist the active control-plane role-plan.json")
     args = parser.parse_args()
     try:
         root = project_root(args.project_dir)

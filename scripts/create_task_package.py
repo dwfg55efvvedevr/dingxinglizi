@@ -10,10 +10,15 @@ import sys
 from pathlib import Path
 
 from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_AGENTS, project_root
-from model_routing import KNOWN_TASK_TYPES, route_fingerprint, route_with_inventory, validate_model_policy
+from model_routing import (
+    KNOWN_TASK_TYPES, PLATFORM_POLICY_VERSION, route_fingerprint, route_with_inventory,
+    route_with_platform_manifest, route_without_platform_manifest, validate_model_policy,
+)
+from platform_runtime import load_runtime_manifest
+from project_layout import control_path
 from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION
 from run_state import latest_run_id
-from state_io import load_json_object
+from state_io import atomic_write_text, load_json_object, safe_project_path
 
 
 WORKERS = {"frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"}
@@ -68,12 +73,13 @@ def create(
     status_path = root / "docs/project-status.json"
     if not status_path.is_file():
         raise ValueError("Project is not initialized: docs/project-status.json is missing")
-    policy_path = root / ".codex/orchestration/model-routing-policy.json"
+    policy_path = control_path(root, "orchestration/model-routing-policy.json")
     try:
-        validate_model_policy(json.loads(policy_path.read_text(encoding="utf-8")))
+        model_policy = json.loads(policy_path.read_text(encoding="utf-8"))
+        validate_model_policy(model_policy)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError(f"Invalid executable model routing policy: {exc}") from exc
-    destination = root / "tasks" / f"{task_id}.yaml"
+    destination = safe_project_path(root, Path("tasks") / f"{task_id}.yaml")
     if destination.exists():
         raise ValueError(f"Task package already exists and will not be overwritten: {destination}")
     project_name = root.name
@@ -85,7 +91,7 @@ def create(
     complexity = status.get("complexity")
     if complexity not in {"Simple", "Standard", "Complex"}:
         raise ValueError("docs/project-status.json has no valid Simple/Standard/Complex complexity")
-    role_plan_path = root / ".codex/orchestration/role-plan.json"
+    role_plan_path = control_path(root, "orchestration/role-plan.json")
     try:
         role_plan = json.loads(role_plan_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
@@ -104,36 +110,64 @@ def create(
     attached_run_id = "NOT_ATTACHED"
     try:
         candidate_run_id = latest_run_id(root)
-        candidate_run = load_json_object(root / ".codex/runs" / candidate_run_id / "run.json")
+        candidate_run = load_json_object(control_path(root, Path("runs") / candidate_run_id / "run.json"))
         if candidate_run.get("status") == "OPEN":
             attached_run_id = candidate_run_id
     except ValueError:
         pass
-    inventory_path = root / ".codex/orchestration/runtime-inventory.json"
+    inventory_path = control_path(root, "orchestration/runtime-inventory.json")
     inventory: dict[str, object] = {}
     try:
         inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, json.JSONDecodeError):
         pass
-    if available_models:
-        runtime_models = sorted(set(available_models))
-        availability_source = "verified_runtime_snapshot"
-        availability_verified = True
-    else:
-        runtime_models = sorted(set(inventory.get("available_models", []))) if isinstance(inventory.get("available_models"), list) else []
-        availability_verified = inventory.get("status") == "VERIFIED" and bool(runtime_models)
-        availability_source = "verified_runtime_snapshot" if availability_verified else "unverified_runtime_inventory"
-    route = route_with_inventory(
-        complexity=complexity,
-        task_type=task_type,
-        role=owner,
-        risk_flags=risk_flags or [],
-        failed_attempts=failed_attempts,
-        failure_type=failure_type,
-        available_models=runtime_models,
-        availability_source=availability_source,
-        availability_verified=availability_verified,
-    )
+    manifest_path = control_path(root, "orchestration/runtime-manifest.json")
+    platform_neutral = model_policy.get("policy_version") == PLATFORM_POLICY_VERSION
+    if platform_neutral and available_models is not None:
+        raise ValueError(
+            "--available-model is legacy-v2 only; v3 requires a verified platform runtime manifest"
+        )
+    if platform_neutral and manifest_path.is_file():
+        manifest = load_runtime_manifest(manifest_path)
+        route = route_with_platform_manifest(
+            manifest=manifest,
+            availability_source=str(manifest_path.relative_to(root.resolve())),
+            complexity=complexity,
+            task_type=task_type,
+            role=owner,
+            risk_flags=risk_flags or [],
+            failed_attempts=failed_attempts,
+            failure_type=failure_type,
+        )
+    elif platform_neutral:
+        route = route_without_platform_manifest(
+            complexity=complexity,
+            task_type=task_type,
+            role=owner,
+            risk_flags=risk_flags or [],
+            failed_attempts=failed_attempts,
+            failure_type=failure_type,
+        )
+    if not platform_neutral:
+        if available_models:
+            runtime_models = sorted(set(available_models))
+            availability_source = "verified_runtime_snapshot"
+            availability_verified = True
+        else:
+            runtime_models = sorted(set(inventory.get("available_models", []))) if isinstance(inventory.get("available_models"), list) else []
+            availability_verified = inventory.get("status") == "VERIFIED" and bool(runtime_models)
+            availability_source = "verified_runtime_snapshot" if availability_verified else "unverified_runtime_inventory"
+        route = route_with_inventory(
+            complexity=complexity,
+            task_type=task_type,
+            role=owner,
+            risk_flags=risk_flags or [],
+            failed_attempts=failed_attempts,
+            failure_type=failure_type,
+            available_models=runtime_models,
+            availability_source=availability_source,
+            availability_verified=availability_verified,
+        )
     required_capabilities = sorted(set(required_capabilities or []))
     optional_capabilities = sorted(set(optional_capabilities or []))
     for capability_id in required_capabilities + optional_capabilities:
@@ -179,9 +213,12 @@ execution_profile:
   available_models:{yaml_list(route['available_models'], 4)}
   status: {quoted(route['status'])}
   capability_tier: {quoted(route['capability_tier'])}
+  platform: {quoted(str(route['platform'] if 'platform' in route else 'legacy-codex'))}
   preferred_model: {quoted(route['preferred_model'])}
   selected_model: {quoted(route['selected_model'])}
+  selected_provider: {quoted(str(route['selected_provider'] if 'selected_provider' in route else 'openai'))}
   model_reasoning_effort: {quoted(route['model_reasoning_effort'])}
+  actual_model_attested: {str(bool(route.get('actual_model_attested', False))).lower()}
   fallback_models:{yaml_list(route['fallback_models'], 4)}
   routing_reasons:{yaml_list(route['routing_reasons'], 4)}
   attempt: {failed_attempts + 1}
@@ -241,8 +278,7 @@ handoff:
   deviations: []
   downstream_decisions: []
 '''
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(content, encoding="utf-8")
+    atomic_write_text(destination, content, allowed_root=root)
     return destination
 
 

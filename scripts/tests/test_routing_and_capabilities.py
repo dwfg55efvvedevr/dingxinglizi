@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import io
+import os
 import re
 import subprocess
 import sys
@@ -21,7 +22,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from model_routing import route_task  # noqa: E402
 from role_routing import route_roles  # noqa: E402
-from resolve_capabilities import download_skill  # noqa: E402
+from resolve_capabilities import configure_mcp, download_skill  # noqa: E402
 from dispatch_receipt import receipt_path  # noqa: E402
 
 
@@ -773,6 +774,63 @@ class CapabilityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "extracted size exceeds"):
                 download_skill(self.root, oversized_id, oversized_candidate, tight_policy)
         self.assertFalse((self.root / f".agents/skills/{oversized_id}").exists())
+
+        platform_roots = {
+            "cursor": ".cursor",
+            "claude-code": ".claude",
+            "opencode": ".opencode",
+        }
+        candidate["source"]["archive_sha256"] = hashlib.sha256(payload).hexdigest()
+        for platform, directory in platform_roots.items():
+            with self.subTest(platform=platform):
+                project = Path(self.temp.name) / f"project-{platform}"
+                project.mkdir()
+                outside = Path(self.temp.name) / f"outside-{platform}"
+                outside.mkdir()
+                (project / directory).symlink_to(outside, target_is_directory=True)
+                with mock.patch("resolve_capabilities.urllib.request.urlopen", return_value=io.BytesIO(payload)):
+                    with self.assertRaisesRegex(ValueError, "traverses a symlink"):
+                        download_skill(project, "safe-skill", candidate, policy, platform)
+                self.assertEqual(list(outside.iterdir()), [])
+
+    def test_capability_lock_and_mcp_config_hardlinks_never_modify_external_files(self) -> None:
+        candidate = {
+            "public-read": {
+                "kind": "mcp_http", "permission": "read", "allowed_tools": ["get"],
+                "source": {"type": "mcp_http", "url": "https://example.invalid/mcp", "credential_mode": "none"},
+            }
+        }
+        self.write_catalog(candidate)
+
+        lock = self.root / ".codex/orchestration/capability-lock.json"
+        outside_lock = Path(self.temp.name) / "outside-lock.json"
+        outside_lock.write_bytes(lock.read_bytes())
+        lock.unlink()
+        os.link(outside_lock, lock)
+        before = hashlib.sha256(outside_lock.read_bytes()).hexdigest()
+        blocked = run("resolve_capabilities.py", self.root, "--required", "public-read", "--apply")
+        self.assertEqual(blocked.returncode, 2, blocked.stdout)
+        self.assertEqual(hashlib.sha256(outside_lock.read_bytes()).hexdigest(), before)
+        lock.unlink()
+        lock.write_text('{"lock_version":"1.0.0","resolved":{}}\n', encoding="utf-8")
+
+        config = self.root / ".codex/config.toml"
+        outside_config = Path(self.temp.name) / "outside-config.toml"
+        outside_config.write_text("DO_NOT_MODIFY\n", encoding="utf-8")
+        os.link(outside_config, config)
+        before = hashlib.sha256(outside_config.read_bytes()).hexdigest()
+        blocked = run("resolve_capabilities.py", self.root, "--required", "public-read", "--apply")
+        self.assertIn(blocked.returncode, (2, 3), blocked.stdout)
+        self.assertEqual(hashlib.sha256(outside_config.read_bytes()).hexdigest(), before)
+
+        project = Path(self.temp.name) / "v3-native-path"
+        project.mkdir()
+        external_parent = Path(self.temp.name) / "outside-codex-parent"
+        external_parent.mkdir()
+        (project / ".codex").symlink_to(external_parent, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "traverses a symlink"):
+            configure_mcp(project, "public-read", candidate["public-read"])
+        self.assertEqual(list(external_parent.iterdir()), [])
 
     def test_credential_free_read_mcp_is_idempotently_configured(self) -> None:
         self.write_catalog({

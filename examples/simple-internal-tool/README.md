@@ -26,7 +26,7 @@ python3 "$SPO_SKILL/scripts/orchestrator.py" plan /tmp/approval-tool --quota eco
 python3 "$SPO_SKILL/scripts/orchestrator.py" run /tmp/approval-tool
 ```
 
-Expected route fields include `required_now: [requirements]`, one DISCOVERY wave, and `max_active_subagents: 1`. The run command returns a unique `RUN-...` directory under `/tmp/approval-tool/.codex/runs/`.
+Expected route fields include `required_now: [requirements]`, one DISCOVERY wave, and `max_active_subagents: 1`. A v3 initialization returns a unique `RUN-...` directory under `/tmp/approval-tool/.dingxinglizi/runs/`; an unmigrated v2 project continues under `.codex/runs/`.
 
 The initialized documents intentionally contain unknowns. Complete and approve them before the build gate; do not treat scaffold validation as product approval.
 

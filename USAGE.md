@@ -1,43 +1,65 @@
-# Software Project Orchestrator v2 — 使用手册
+# Software Project Orchestrator v3.0 — 使用手册
 
-仓库名是 `dingxinglizi`，稳定 Skill 调用名是 `$software-project-orchestrator`。v2 提供统一命令入口，同时保留原有单功能脚本以兼容现有流程。
+仓库名是 `dingxinglizi`，稳定 Skill 调用名是 `$software-project-orchestrator`。v3 将项目事实与编排状态平台中立化，并为 Codex、Cursor、Claude Code、OpenCode 生成各自原生配置。
 
-## 1. 安装与诊断
+## 1. 检测和安装
+
+要求 Python 3.9+。先克隆仓库并检测本机宿主：
 
 ```bash
-mkdir -p ~/.agents/skills
-git clone https://github.com/lizi-product-studio/dingxinglizi.git \
-  ~/.agents/skills/software-project-orchestrator
-
-export SPO_SKILL="$HOME/.agents/skills/software-project-orchestrator"
+git clone https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
+export SPO_SKILL=/tmp/dingxinglizi
 python3 "$SPO_SKILL/scripts/orchestrator.py" version
-python3 "$SPO_SKILL/scripts/orchestrator.py" doctor
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform detect
 ```
 
-要求 Python 3.9+。Skill 的运行时核心不依赖第三方 Python 包。`doctor` 只检查，不会修改被诊断项目；首次 `run` 才创建项目的 run ledger。
+`detect` 只执行 PATH 查找和 `<executable> --version`，不认证账户，也不猜模型库存。若检测到多个宿主，显式选择一个。
 
-当前官方 USER 级本地发现路径是 `~/.agents/skills`；项目专用 Skill 可放在仓库的 `.agents/skills/`。如果安装后未出现，重启 Codex。路径规则见 [OpenAI Build skills](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills)。`doctor` 只验证包和项目合同，不证明宿主已加载 Skill；请以 Codex 的 Skill 列表或 `$software-project-orchestrator` 实际出现为准。
-
-更新已安装版本：
+用户级安装默认只预览：
 
 ```bash
-git -C "$SPO_SKILL" pull --ff-only
-python3 "$SPO_SKILL/scripts/orchestrator.py" doctor
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform install --platform cursor --scope user
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform install --platform cursor --scope user --apply
 ```
 
-## 2. 在 Codex 中调用
+OpenCode 的 V1/V2 原生权限格式不同。若本机版本可由 `opencode --version` 明确识别，默认 `auto` 会选择对应格式；离线生成或版本未知时要显式选择：
+
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform install --platform opencode \
+  --scope user --opencode-schema v2
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform install --platform opencode \
+  --scope user --opencode-schema v2 --apply
+```
+
+V1 改为 `--opencode-schema v1`。未来未知主版本不会被当成 V2，命令会先阻塞，等待适配器核验更新。
+
+项目级安装需要目标目录：
+
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform install /path/to/project \
+  --platform claude-code --scope project
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform install /path/to/project \
+  --platform claude-code --scope project --apply
+```
+
+安装器特性：
+
+- 一次只生成所选平台；
+- 默认不写，`--apply` 才写；
+- 默认不覆盖，`--update` 才更新不同内容；
+- 冲突时整体停止，不做部分安装；
+- 拒绝平台目录中的符号链接路径；
+- 不联网、不登录、不读凭据、不调用包管理器。
+
+更新 Git 克隆版可用 `git pull --ff-only`。非 Git 安装可重新执行源仓库中的 `platform install ... --apply --update`，先保留备份并查看预览。
+
+## 2. 在 Agent 宿主中调用
 
 ```text
-$software-project-orchestrator 初始化这个项目，建立业务事实，判断复杂度，只调用当前阶段必要角色，并要求独立 QA 证据后才完成。
+$software-project-orchestrator 初始化这个项目，建立唯一业务事实源，判断复杂度，只调用当前阶段最少必要角色，质疑未经证实的需求，并要求独立 QA 后才完成。
 ```
 
-恢复已有项目：
-
-```text
-$software-project-orchestrator 检查这个项目上次运行记录，安全恢复；如果输入或路由变化则重新规划，不要重复启动不确定的 Agent。
-```
-
-Skill 可自动匹配 substantial 软件交付任务；如果环境中有多个相似 Skill，显式写出稳定调用名最可靠。
+如果宿主没有自动列出 Skill，重启宿主并用 `platform doctor` 检查结构。结构可用不等于宿主已经在当前会话加载它。
 
 ## 3. 初始化新项目
 
@@ -48,76 +70,112 @@ python3 "$SPO_SKILL/scripts/orchestrator.py" init /path/to/project \
   --project-name "Acme CRM" \
   --domain "CRM" \
   --complexity Standard \
+  --platform cursor \
   --domain-pack crm \
   --dry-run
 ```
 
-确认后去掉 `--dry-run`。初始化器是非覆盖式的：任何目标合同文件已存在都会在写入前停止。已有仓库不要再次初始化，按第 11 节迁移。
+初始化 OpenCode 项目时同样追加 `--opencode-schema v1|v2`；只有已安装版本可明确识别时才可依赖默认 `auto`。
 
-可用领域包：
+确认后去掉 `--dry-run`。初始化器非覆盖式；任一合同文件存在都会在写入前停止。`--platform auto` 只在恰好发现一个宿主时自动选择；发现多个时要求显式选择。一个都未发现时会生成向后兼容的 Codex 配置并警告，但不会声称 Codex 已安装。
 
-```bash
-python3 "$SPO_SKILL/scripts/orchestrator.py" domains list
-python3 "$SPO_SKILL/scripts/orchestrator.py" domains inspect ecommerce
-python3 "$SPO_SKILL/scripts/orchestrator.py" domains apply /path/to/project ecommerce --dry-run
-python3 "$SPO_SKILL/scripts/orchestrator.py" domains apply /path/to/project ecommerce
+新项目结构：
+
+```text
+project/
+├── AGENTS.md
+├── docs/
+├── tasks/
+├── evidence/
+├── .dingxinglizi/
+│   ├── orchestration/
+│   ├── runs/
+│   └── evolution/
+└── <selected-host>/agents/
 ```
 
-领域包是候选清单，不是事实注入器。应用后审阅 `docs/domain-pack.md`，再把有证据的内容写入权威项目文档。
+其中 `<selected-host>` 是 `.codex`、`.cursor`、`.claude` 或 `.opencode`。宿主配置不是业务事实源。
 
 ## 4. 建立唯一事实源
 
-初始化后依次完善：
+依次完善：
 
-1. `docs/00-project-context.md`：目标、问题、商业模式、角色、对象、流程、状态机、规则、权限、资金、通知、后台运营、范围、限制、指标、未知问题；
+1. `docs/00-project-context.md`：目标、问题、商业模式、角色、对象、流程、状态机、规则、权限、资金、通知、后台、范围、限制、指标、未知；
 2. `docs/01-domain-rules.md`：带 ID、来源、版本和可测试结果的领域规则；
 3. `docs/02-glossary.md`：统一术语；
-4. `docs/03-role-journey-matrix.md`：角色与旅程；
+4. `docs/03-role-journey-matrix.md`：角色—页面、页面—功能、前台—后台矩阵；
 5. `docs/04-prd.md`：需求与验收意图；
-6. `docs/05-state-permission-matrix.md`：对象状态、动作和权限；
+6. `docs/05-state-permission-matrix.md`：功能—状态、对象动作与权限；
 7. `docs/06`–`10`：UX、设计系统、系统设计、API/数据契约、测试计划；
-8. `docs/checklists/product-completeness.md`：每项 `REQUIRED / NOT_APPLICABLE / DEFERRED`，并记录覆盖状态。
+8. `docs/checklists/product-completeness.md`：每项标记 `REQUIRED / NOT_APPLICABLE / DEFERRED`。
 
-事实只能标为 `CONFIRMED`、`EVIDENCE_INFERRED`、`DEFAULT_ASSUMPTION`、`NOT_APPLICABLE` 或 `BLOCKING_UNKNOWN`。聊天记录、领域包和行业惯例都不能自动升级为 `CONFIRMED`。
+事实只能标为 `CONFIRMED`、`EVIDENCE_INFERRED`、`DEFAULT_ASSUMPTION`、`NOT_APPLICABLE` 或 `BLOCKING_UNKNOWN`。聊天、行业包、用户措辞和模型常识都不能自动升级为 `CONFIRMED`。
 
-## 5. 诊断、路由与创建运行
+## 5. 诊断、生命周期和按需角色
 
 ```bash
 python3 "$SPO_SKILL/scripts/orchestrator.py" doctor /path/to/project
-
-python3 "$SPO_SKILL/scripts/orchestrator.py" transition /path/to/project \
-  --target DISCOVERY
-
-python3 "$SPO_SKILL/scripts/orchestrator.py" plan /path/to/project \
-  --quota economy
-
-python3 "$SPO_SKILL/scripts/orchestrator.py" plan /path/to/project \
-  --quota economy --write
-
+python3 "$SPO_SKILL/scripts/orchestrator.py" transition /path/to/project --target DISCOVERY
+python3 "$SPO_SKILL/scripts/orchestrator.py" plan /path/to/project --quota economy
+python3 "$SPO_SKILL/scripts/orchestrator.py" plan /path/to/project --quota economy --write
 python3 "$SPO_SKILL/scripts/orchestrator.py" run /path/to/project
 ```
 
-`transition` 会先校验门禁再原子写入状态，不能跨级跳转。先预览角色计划再 `--write`；省略 `--stage` 会自动使用已落盘的当前状态，避免计划与运行记录错位。`required_now` 是当前允许启动的角色，`execution_waves` 是顺序计划，`deferred_available` 不是启动许可。
+`required_now` 才是当前允许启动的角色；`execution_waves` 是顺序计划；`deferred_available` 不是启动许可。
 
-额度模式：
+- `economy`：最多 1 个活动子 Agent；
+- `balanced`：最多 2 个，仅限明确独立读任务或 Engineering Lead + 一个 Worker；
+- `quality_first`：并发边界相同，更积极触发独立质量挑战。
 
-- `economy`：默认最多 1 个活动子 Agent；
-- `balanced`：最多 2 个，但只允许明确可并行的不同只读角色，或 Engineering Lead + 一个 Worker；
-- `quality_first`：并发边界同 balanced，更积极启用独立质量挑战。
+只有 Orchestrator 管理专业角色；Engineering Lead 只管理实现 Worker；Worker 不得继续委派；Engineering Lead 与最终 QA 不同时执行。
 
-Complex 只代表完整职责在生命周期内可用，不代表现在启动全部角色。
+## 6. 运行时模型证据
 
-## 6. 验证运行时模型并创建 Task Package
+v3 Task Package 请求逻辑能力档，具体模型从 `.dingxinglizi/orchestration/runtime-manifest.json` 解析。准备模型库存文件：
 
-Orchestrator 必须从当前运行时获得真实模型信息，并更新：
-
-```text
-.codex/orchestration/runtime-inventory.json
+```json
+{
+  "models": [
+    {
+      "id": "vendor/model-a",
+      "provider": "vendor",
+      "capability_tier": "ADVANCED",
+      "reasoning_efforts": ["medium", "high"]
+    },
+    {
+      "id": "vendor/model-b",
+      "provider": "vendor",
+      "capability_tier": "EXPERT",
+      "reasoning_efforts": ["high", "xhigh"]
+    }
+  ]
+}
 ```
 
-至少记录 `status: VERIFIED`、精确模型 slug、`available_skills`、`available_mcp_servers`、验证时间和证据来源；能获得时同时记录 runtime/host/version。静态文档里的模型名、磁盘上的 Skill 目录或单独一段 MCP 配置都不构成运行时可用性证据。
+捕获清单：
 
-创建 DRAFT 任务包：
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform runtime-manifest \
+  --platform opencode \
+  --project-dir /path/to/project \
+  --models-file /path/to/models.json \
+  --models-verified \
+  --evidence-source "OpenCode provider model list checked 2026-08-28"
+```
+
+不加 `--update` 不会覆盖现有清单。`--models-verified` 必须同时提供文件和命名证据来源。原始库存文件必须保留为普通单链接文件；派发前会重新验证 SHA-256、规范化模型字段、当前 executable/version 和 24 小时时效。它仍不证明真实执行。
+
+单独验证解析：
+
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform model-resolve \
+  /path/to/project/.dingxinglizi/orchestration/runtime-manifest.json \
+  --tier EXPERT --reasoning high --risk-level high --risk security
+```
+
+高风险下，运行时和模型库存都必须验证，模型必须满足或高于能力下限并支持请求的 reasoning。无证据就阻塞，不静默降级。策略 `2.0.0` 不允许用 Task/Preflight 的 `--available-model` 参数绕过清单验证；该参数仅保留给仍使用策略 `1.2.0` 的 v2 兼容项目。缺少 manifest 时任务仍可保存为草稿，但平台、供应商和模型保持未解析，派发前检查必定阻塞。
+
+## 7. Task Package 与派发前检查
 
 ```bash
 python3 "$SPO_SKILL/scripts/orchestrator.py" task /path/to/project \
@@ -129,173 +187,108 @@ python3 "$SPO_SKILL/scripts/orchestrator.py" task /path/to/project \
   --objective "确认首个可交付版本的角色、对象、流程、规则和验收边界"
 ```
 
-生成器会写入路由策略版本、当前 role-plan 指纹、输入指纹、模型/思考强度、失败升级记录和能力需求。它故意停在 `DRAFT`。
+生成器故意写成 `DRAFT`。必须人工或由 Orchestrator 补全 business context、输入文档、scope、out of scope、deliverables、Given/When/Then/evidence 验收、allowed files、validation、evidence locations、风险、依赖和 return target，再改为 `READY_FOR_DISPATCH`。
 
-生成器会自动绑定当前唯一的 `OPEN` run。人工或 Orchestrator 必须补全：
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" preflight /path/to/project \
+  tasks/TASK-001.yaml --record-ready
+```
 
-- business context 和输入文档；
-- scope / out_of_scope；
-- deliverables；
-- 可观察的 Given/When/Then/evidence 验收标准；
-- 写任务的 allowed files；
-- validation 与 evidence locations；
-- 风险、依赖和 return target。
+preflight 会重新计算角色计划、输入指纹、模型解析和能力状态。CLI 生成 READY receipt，但实际宿主启动后仍需记录真实 provider/model/reasoning/runtime 的 execution receipt；模板在 `assets/platforms/common/execution-receipt.template.json`。
 
-审阅完成后把顶层状态改为 `READY_FOR_DISPATCH`，不要手改自动生成的路由字段。
+## 8. 平台兼容等级
 
-## 7. 能力解析与派发前检查
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" platform doctor /path/to/project \
+  --platform cursor --scope project \
+  --manifest /path/to/project/.dingxinglizi/orchestration/runtime-manifest.json
+```
 
-Agent 只声明能力需求；Orchestrator 统一解析：
+诊断 OpenCode 离线安装时也应传与生成时相同的 `--opencode-schema v1|v2`，否则无法从运行时确认 schema 时会拒绝比较。
+
+- L1：Skill 可发现；
+- L2：portable core 可用；
+- L3：原生 profiles、宿主 executable、已验证模型库存可用；
+- L4：本地 native execution 声明通过精确 schema、SHA-256 指纹以及 provider/model/reasoning/runtime 清单一致性检查。
+
+只生成 profile 不能升级为 L4。L4 也是无签名本地声明，不是独立第三方或密码学执行证明；拥有完整本地写权限的人可以协调重写相关文件。
+
+Doctor 默认用于诊断，达到 L1 即返回成功。CI 或发布门禁必须追加 `--require-level L2|L3|L4`；实际等级低于目标时返回退出码 3。OpenCode 的只读审查角色同时禁用 edit 与 V1 bash/V2 shell；需要执行命令的测试交给写入权分离的 Test Worker，再由 QA 读取证据。
+
+## 9. 能力与 MCP
 
 ```bash
 python3 "$SPO_SKILL/scripts/orchestrator.py" capabilities /path/to/project \
   --required github-read
 ```
 
-默认是只读计划。只有项目信任策略允许的固定 commit、哈希匹配、许可允许、无需凭据、项目本地且权限不超限的候选，才可加 `--apply`。未知社区代码、浮动版本、安装脚本、OAuth、凭据、写权限、全局安装和生产访问必须阻塞或取得相应授权。
+默认只规划。`--apply` 只允许：
 
-`--apply` 成功后返回 `PROVISIONED_PENDING_RUNTIME` 和阻塞退出码是正常现象：它只表示制品或配置已安全准备。Orchestrator 随后启动新 Agent 会话，从真实宿主核实能力发现情况，并更新 `runtime-inventory.json`。只有能力 ID 出现在相应的 `available_skills` 或 `available_mcp_servers` 列表里，结果才会变成 `SATISFIED`。用户不需要手动给每个角色装一遍，但系统也不会把“文件存在”伪装成“当前会话可调用”。
+- allowlist 仓库；
+- 固定 40 位 commit；
+- 匹配 archive SHA-256；
+- 允许的许可证；
+- 无可执行代码；
+- 项目本地安装；
+- 权限不超过策略。
 
-派发前：
+安全准备后的 Skill 会放入当前平台的项目 Skill 目录，但仍返回 `PROVISIONED_PENDING_RUNTIME`，直到新宿主会话证明发现它。
 
-```bash
-python3 "$SPO_SKILL/scripts/orchestrator.py" preflight /path/to/project \
-  tasks/TASK-001.yaml \
-  --available-model gpt-5.6-luna \
-  --available-model gpt-5.6-terra \
-  --available-model gpt-5.6-sol \
-  --record-ready
-```
+Codex 可自动管理无凭据、只读 HTTPS MCP 的受管配置块。其他三个平台当前不自动写 MCP 配置；请使用宿主官方配置/授权流程，再把真实发现结果写入运行时清单。OAuth、API key、私有服务、STDIO 包、写权限、数据库凭据和部署访问保持阻塞，除非获得单独授权并使用宿主支持的流程。
 
-只有 `READY` 加匹配的 dispatch receipt 才允许实际 Codex 运行时启动角色。CLI 负责合同和证据，不会自己创建 Agent 会话。
-
-## 8. 模型路由与失败处理
-
-不要在角色 TOML 中永久写死模型。每个 Task Package 独立路由：
-
-- 低风险提取、扫描、机械任务优先 Luna；
-- 常规分析、设计、实现优先 Terra；
-- 架构、安全、权限、迁移、并发、高影响审查和复杂推理优先 Sol；
-- 有效质量失败先提高 reasoning effort，再提高模型能力；
-- 网络、auth、permission、missing input、tool unavailable 等环境失败不升级模型；
-- 到达最大尝试次数返回阻塞；
-- 高风险 Sol 下限不可用时失败关闭，不能静默降级。
-
-运行时真正启动 Agent 时，必须显式使用任务包中的 `selected_model` 和 `model_reasoning_effort`。如果宿主不支持该组合，返回 Orchestrator 重路由或阻塞。
-
-## 9. 完成一波并推进下一波
-
-Owner 完成后：
-
-1. 写入其拥有的交付物；
-2. 在 Task Package handoff 中记录结论、输入、artifact、测试/截图/日志等证据、偏差和下游决定；
-3. 把任务设为 `COMPLETED`；
-4. Orchestrator 写入检查点；
-5. 释放文件所有权并关闭该角色会话；
-6. Orchestrator 用已验证完成包重新路由。
+## 10. 中断恢复
 
 ```bash
 python3 "$SPO_SKILL/scripts/orchestrator.py" checkpoint /path/to/project \
-  --event HANDOFF_PERSISTED \
-  --task-id TASK-001 \
-  --conclusion COMPLETE \
-  --artifact docs/04-prd.md \
-  --evidence evidence/AC-001.txt
-```
-
-Artifact/evidence 必须是项目内已存在的文件；路径逃逸会被拒绝。`TASK_BLOCKED` 必须写明阻塞原因，`RUN_COMPLETED` 只允许项目已经 `DONE`、没有活动任务/会话且独立 QA 结论为 `PASS` 或 `PASS_WITH_ACCEPTED_RISKS`。
-
-示例：
-
-```bash
-python3 "$SPO_SKILL/scripts/orchestrator.py" plan /path/to/project \
-  --stage DISCOVERY \
-  --quota economy \
-  --completed-role requirements \
-  --completed-task requirements=tasks/TASK-001.yaml \
-  --write
-```
-
-Reviewer 只能在 Owner handoff 之后激活。开发自测是证据，不是独立验收。
-
-## 10. 门禁、状态与完成
-
-```bash
-python3 "$SPO_SKILL/scripts/orchestrator.py" validate /path/to/project \
-  --target READY_FOR_BUILD
-
-python3 "$SPO_SKILL/scripts/orchestrator.py" status /path/to/project
-```
-
-`READY_FOR_BUILD` 至少要求角色—页面、页面—功能、功能—状态、前台—后台、权限和验收矩阵，以及适用的 Requirements/Product/UX/UI/Architecture 批准证据。
-
-`DONE` 至少要求：所有适用验收有证据；必须测试通过；无未接受 P0/P1；项目文档反映真实行为；独立 QA 为 `PASS` 或获明确授权的 `PASS_WITH_ACCEPTED_RISKS`；公开发布/生产部署等外部动作拥有单独授权。
-
-缺陷按源头打回：业务规则→Requirements；漏页面/功能/状态/后台→Product Auditor；流程→UX；视觉/文案→UI；API/数据/权限设计→Architect；实现→Engineering Lead；测试不足→QA。
-
-## 11. 中断恢复与 v1.x 迁移
-
-中断后先恢复，不要直接新建 run：
-
-```bash
-python3 "$SPO_SKILL/scripts/orchestrator.py" doctor /path/to/project
+  --event HANDOFF_PERSISTED --task-id TASK-001 \
+  --artifact docs/04-prd.md --evidence evidence/TASK-001-review.md
 python3 "$SPO_SKILL/scripts/orchestrator.py" resume /path/to/project
 python3 "$SPO_SKILL/scripts/orchestrator.py" report /path/to/project
 ```
 
-可能结果：
+恢复结论只有 `RESUME_SAFE`、`REPLAN_REQUIRED`、`RECONCILIATION_REQUIRED`、`BLOCKED`、`DONE`。工具不会假设一个中断 Agent 还活着，也不会静默清理不确定会话。
 
-- `RESUME_SAFE`：输入和路由未变，可从检查点继续；
-- `REPLAN_REQUIRED`：项目输入或 route fingerprint 变化；
-- `RECONCILIATION_REQUIRED`：仍有不确定活动会话，禁止启动重复角色；
-- `BLOCKED`：核心证据缺失或损坏；
-- `DONE`：读取/生成报告即可。
+## 11. 从 v2 迁移
 
-现有 v1.x 项目不要覆盖式初始化。先备份/提交，再安装 v2、运行 doctor，并按 [references/migration.md](references/migration.md) 合并缺失合同。内部路由策略版本与产品版本独立，不要为了显示 v2 而机械修改未变化的 policy version。
-
-## 12. 切换行业
-
-保留流程，替换业务事实层：目标、术语、对象、生命周期、规则、权限、完整性适用性、架构、测试和风险。
-
-- 家政：服务者、地址、预约、派单、履约证据、取消、投诉、结算；
-- 电商：SPU/SKU、库存、购物车、订单、优惠、支付、物流、退款、售后；
-- CRM：租户、线索、客户/联系人、商机、活动、归属、数据范围、导入导出；
-- SaaS：组织、成员、套餐、权益、订阅、账单、计量、审计、租户隔离；
-- 拼团：团、成团条件、库存锁定、支付、失败退款、履约、团长/自提点；
-- AI Agent：模型/供应商、提示词、工具、知识检索、审批、运行状态、评测、成本、隐私。
-
-## 13. 自检与贡献
+v2 项目无需迁移就能继续使用；只要 `.dingxinglizi/` 不存在，控制层会整体选择旧 `.codex` 状态，绝不混读。
 
 ```bash
-SPO_SKILL="${SPO_SKILL:-$HOME/.agents/skills/software-project-orchestrator}"
+python3 "$SPO_SKILL/scripts/orchestrator.py" migrate /path/to/v2-project
+python3 "$SPO_SKILL/scripts/orchestrator.py" migrate /path/to/v2-project --apply
+```
 
-python3 -m py_compile "$SPO_SKILL/scripts/"*.py
+迁移是原子、非破坏复制。若还要复制 Evolution：先把 `.dingxinglizi/evolution/` 加到有效 `.gitignore` 并确认未跟踪，再加 `--include-evolution`。迁移后的项目仍保留复制来的模型策略 `1.2.0`；迁移命令不执行策略升级，也不自动启用跨供应商路由。不要在没有备份和核验时删除旧 `.codex`。
+
+## 12. 领域切换
+
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" domains list
+python3 "$SPO_SKILL/scripts/orchestrator.py" domains inspect ecommerce
+python3 "$SPO_SKILL/scripts/orchestrator.py" domains apply /path/to/project ecommerce --dry-run
+python3 "$SPO_SKILL/scripts/orchestrator.py" domains apply /path/to/project ecommerce
+```
+
+从家政切到电商、CRM、SaaS 或 AI Agent 时，不换主流程；更换/审阅领域候选，更新项目事实、对象、状态机、权限、资金、运营、合规和验收。领域包不会自动覆盖已有事实或锁。
+
+## 13. 受监督改进
+
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" evolution init /path/to/project
+python3 "$SPO_SKILL/scripts/orchestrator.py" evolution collect /path/to/project --run-id RUN-ID
+python3 "$SPO_SKILL/scripts/orchestrator.py" evolution retrospect /path/to/project
+python3 "$SPO_SKILL/scripts/orchestrator.py" evolution propose /path/to/project --retrospective RET-ID.json
+python3 "$SPO_SKILL/scripts/orchestrator.py" evolution eval-candidates /path/to/project --proposal PRP-ID.json
+```
+
+Evolution 数据位于当前有效控制目录的 `evolution/`。候选始终 `DRAFT + REVIEW_REQUIRED`，不能自动改 Skill、项目事实、正式 eval、保护门禁、Git 或外部系统。
+
+## 14. 完整验证
+
+```bash
+python3 -m py_compile "$SPO_SKILL"/scripts/*.py
 python3 -m unittest discover -s "$SPO_SKILL/scripts/tests" -v
 python3 "$SPO_SKILL/scripts/orchestrator.py" eval
 python3 "$SPO_SKILL/scripts/orchestrator.py" doctor
 ```
 
-修改角色或模型路由、恢复状态、Task Package 合同或领域包后，必须补测试/评测。离线 eval 只证明确定性控制规则，不证明真实项目质量。
-
-## 14. 命令索引
-
-```text
-orchestrator.py version
-orchestrator.py doctor [PROJECT]
-orchestrator.py init PROJECT ...
-orchestrator.py plan PROJECT ...
-orchestrator.py run PROJECT
-orchestrator.py checkpoint PROJECT ...
-orchestrator.py resume PROJECT [--run-id RUN]
-orchestrator.py report PROJECT [--run-id RUN]
-orchestrator.py validate PROJECT [--target STATE]
-orchestrator.py status PROJECT [--target STATE]
-orchestrator.py transition PROJECT --target STATE
-orchestrator.py task PROJECT ...
-orchestrator.py preflight PROJECT TASK ...
-orchestrator.py capabilities PROJECT ...
-orchestrator.py eval [--suite FILE]
-orchestrator.py domains list|inspect|apply ...
-```
-
-每个子命令支持 `--help`。
+发布包中的四平台配置经过静态/合同测试，不代表所有宿主都在当前机器完成真实会话验证。以 `platform doctor` 返回等级和对应证据为准。

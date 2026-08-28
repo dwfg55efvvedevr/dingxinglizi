@@ -1,6 +1,6 @@
 # Run ledger
 
-The v2 control plane stores resumable, auditable local run state under `<project>/.codex/runs/RUN-ID/`. Project documents remain the source of business truth; the ledger records orchestration state and evidence references.
+The control plane stores resumable, auditable local run state under the active control root's `runs/RUN-ID/`: `.dingxinglizi/runs/` for v3 projects or `.codex/runs/` for unmigrated v2 projects. Project documents remain the source of business truth; the ledger records orchestration state and evidence references.
 
 ## Ownership and contents
 
@@ -37,4 +37,12 @@ An event name alone is never evidence:
 
 Every accepted checkpoint refreshes the project snapshot and routing lineage. An empty checkpoint cannot re-trust a stale plan, and a hand-edited `DONE` state cannot convert an open run into a completed run.
 
-Use `python3 "$SKILL_DIR/scripts/orchestrator.py" run PROJECT_DIR`, `checkpoint`, `resume`, and `report`. A competing OPEN/BLOCKED run is rejected until the current run is reconciled or completed. The Python control plane does not start Codex Agents itself.
+Use `python3 "$SKILL_DIR/scripts/orchestrator.py" run PROJECT_DIR`, `checkpoint`, `resume`, and `report`. A competing OPEN/BLOCKED run is rejected until the current run is reconciled or completed. The Python control plane does not start native Agent sessions itself.
+
+## Evolution collection
+
+Evolution may derive a sanitized Outcome from a structurally consistent completed run. Collection revalidates all six ledger files, exact event sequence, DONE and independent-QA conclusion, project-local indexed evidence, routing lineage, resource limits, and stable file hashes. It does not copy notes, logs, evidence contents, source code, project prose, or customer data.
+
+Run files are unsigned local evidence. Structural validation detects corruption and inconsistency, not a coherent malicious rewrite by an actor who can replace every related file. A changed fingerprint for an already collected Run returns lineage drift instead of creating a second Outcome.
+
+An OPEN, BLOCKED, inconsistent, oversized or changing Run is not a collectible Outcome. Record a failed or blocked lesson through explicit sanitized Evolution Feedback rather than editing run history. See [evolution-core.md](evolution-core.md).

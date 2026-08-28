@@ -124,7 +124,7 @@ source_of_truth: project-document-set
 
 - Level: {{COMPLEXITY}}
 - Evidence: BLOCKING_UNKNOWN
-- Current role plan: `.codex/orchestration/role-plan.json`
+- Current role plan: `.dingxinglizi/orchestration/role-plan.json` for v3 projects; unmigrated v2 projects continue from `.codex/orchestration/role-plan.json` until migration.
 - Quota mode: economy
 - Installed professional role profiles: AVAILABLE_NOT_ACTIVE
 - Temporary specialists/Workers: NOT_APPLICABLE

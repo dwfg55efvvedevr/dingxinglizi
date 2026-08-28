@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "platform": "opencode",
+  "agent_format": "markdown_yaml_frontmatter",
+  "project_agent_directory": ".opencode/agents",
+  "project_skill_directory": ".opencode/skills",
+  "user_agent_directory": ".config/opencode/agents",
+  "user_skill_directory": ".config/opencode/skills",
+  "supported_config_schemas": ["v1", "v2"],
+  "schema_selection": "installed_major_or_explicit_fail_closed",
+  "verified_fields": {
+    "v1": ["description", "mode", "permission"],
+    "v2": ["description", "mode", "permissions"]
+  },
+  "model_binding": "provider_model_from_verified_runtime",
+  "topology_enforcement": {
+    "v1": "permission.task_patterns",
+    "v2": "ordered_permissions.subagent_rules"
+  }
+}

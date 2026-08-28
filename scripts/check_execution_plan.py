@@ -11,7 +11,16 @@ from pathlib import Path
 from _common import project_root, read_text
 from check_project_status import check as check_project_status
 from dispatch_receipt import record_dispatch_receipt
-from model_routing import route_fingerprint, route_with_inventory, validate_model_policy
+from model_routing import (
+    PLATFORM_POLICY_VERSION,
+    route_fingerprint,
+    route_with_inventory,
+    route_with_platform_manifest,
+    route_without_platform_manifest,
+    validate_model_policy,
+)
+from platform_runtime import load_runtime_manifest
+from project_layout import control_path
 from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION, role_plan_fingerprint, validate_role_policy
 from route_roles import source_fingerprint
 from resolve_capabilities import installed_skill, load_json, mcp_config_details, runtime_capabilities
@@ -25,33 +34,64 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
     execution = top_section(text, "execution_profile")
     capabilities = top_section(text, "capability_requirements")
     status = load_json(root / "docs/project-status.json")
-    validate_model_policy(load_json(root / ".codex/orchestration/model-routing-policy.json"))
-    validate_role_policy(load_json(root / ".codex/orchestration/role-routing-policy.json"))
-    inventory = load_json(root / ".codex/orchestration/runtime-inventory.json")
-    if available_models is not None:
-        runtime_models = sorted(set(available_models))
-        availability_source = "verified_runtime_snapshot"
-        availability_verified = True
-    else:
-        values = inventory.get("available_models", [])
-        runtime_models = sorted(set(values)) if isinstance(values, list) else []
-        availability_verified = inventory.get("status") == "VERIFIED" and bool(runtime_models)
-        availability_source = "verified_runtime_snapshot" if availability_verified else "unverified_runtime_inventory"
+    model_policy = load_json(control_path(root, "orchestration/model-routing-policy.json"))
+    validate_model_policy(model_policy)
+    validate_role_policy(load_json(control_path(root, "orchestration/role-routing-policy.json")))
+    inventory = load_json(control_path(root, "orchestration/runtime-inventory.json"))
+    manifest_path = control_path(root, "orchestration/runtime-manifest.json")
+    platform_neutral = model_policy.get("policy_version") == PLATFORM_POLICY_VERSION
+    override_error = platform_neutral and available_models is not None
+    if platform_neutral and manifest_path.is_file():
+        runtime_manifest = load_runtime_manifest(manifest_path)
+        expected = route_with_platform_manifest(
+            manifest=runtime_manifest,
+            availability_source=str(manifest_path.relative_to(root.resolve())),
+            complexity=status.get("complexity", ""),
+            task_type=quoted_scalar(text, "task_type"),
+            role=quoted_scalar(text, "owner"),
+            risk_flags=list_field(risk, "flags"),
+            failed_attempts=integer_scalar(risk, "failed_attempts"),
+            failure_type=quoted_scalar(risk, "failure_type"),
+        )
+    elif platform_neutral:
+        expected = route_without_platform_manifest(
+            complexity=status.get("complexity", ""),
+            task_type=quoted_scalar(text, "task_type"),
+            role=quoted_scalar(text, "owner"),
+            risk_flags=list_field(risk, "flags"),
+            failed_attempts=integer_scalar(risk, "failed_attempts"),
+            failure_type=quoted_scalar(risk, "failure_type"),
+        )
     owner = quoted_scalar(text, "owner")
-    expected = route_with_inventory(
-        complexity=status.get("complexity", ""),
-        task_type=quoted_scalar(text, "task_type"),
-        role=owner,
-        risk_flags=list_field(risk, "flags"),
-        failed_attempts=integer_scalar(risk, "failed_attempts"),
-        failure_type=quoted_scalar(risk, "failure_type"),
-        available_models=runtime_models,
-        availability_source=availability_source,
-        availability_verified=availability_verified,
-    )
+    if not platform_neutral:
+        if available_models is not None:
+            runtime_models = sorted(set(available_models))
+            availability_source = "verified_runtime_snapshot"
+            availability_verified = True
+        else:
+            values = inventory.get("available_models", [])
+            runtime_models = sorted(set(values)) if isinstance(values, list) else []
+            availability_verified = inventory.get("status") == "VERIFIED" and bool(runtime_models)
+            availability_source = "verified_runtime_snapshot" if availability_verified else "unverified_runtime_inventory"
+        expected = route_with_inventory(
+            complexity=status.get("complexity", ""),
+            task_type=quoted_scalar(text, "task_type"),
+            role=owner,
+            risk_flags=list_field(risk, "flags"),
+            failed_attempts=integer_scalar(risk, "failed_attempts"),
+            failure_type=quoted_scalar(risk, "failure_type"),
+            available_models=runtime_models,
+            availability_source=availability_source,
+            availability_verified=availability_verified,
+        )
     errors: list[str] = []
+    if override_error:
+        errors.append(
+            "BLOCKED_PLATFORM_MODEL_OVERRIDE: --available-model is legacy-v2 only; "
+            "v3 requires a verified platform runtime manifest"
+        )
     errors.extend(validate_task_contract(root, text, owner))
-    role_plan = load_json(root / ".codex/orchestration/role-plan.json")
+    role_plan = load_json(control_path(root, "orchestration/role-plan.json"))
     if role_plan.get("status") != "ROUTED":
         errors.append("BLOCKED_ROLE_PLAN: run route_roles.py --write before dispatch")
     else:
@@ -156,8 +196,10 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
         "availability_source": expected["availability_source"],
         "status": expected["status"],
         "capability_tier": expected["capability_tier"],
+        "platform": str(expected["platform"] if "platform" in expected else "legacy-codex"),
         "preferred_model": expected["preferred_model"],
         "selected_model": expected["selected_model"],
+        "selected_provider": str(expected["selected_provider"] if "selected_provider" in expected else "openai"),
         "model_reasoning_effort": expected["model_reasoning_effort"],
         "downgrade_policy": expected["downgrade_policy"],
     }
@@ -176,6 +218,8 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
         )
     if boolean_scalar(execution, "availability_verified") != expected["availability_verified"]:
         errors.append("ROUTE_MISMATCH: availability_verified differs from current runtime inventory")
+    if boolean_scalar(execution, "actual_model_attested") != bool(expected.get("actual_model_attested", False)):
+        errors.append("ROUTE_MISMATCH: actual_model_attested differs from current runtime evidence")
     actual_attempt = integer_scalar(execution, "attempt")
     expected_attempt = expected["failed_attempts"] + 1
     if actual_attempt != expected_attempt:
@@ -190,7 +234,7 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
 
     if quoted_scalar(capabilities, "permission_ceiling") != "read":
         errors.append("BLOCKED_PERMISSION: automatic capability permission ceiling must remain read")
-    lock = load_json(root / ".codex/orchestration/capability-lock.json").get("resolved", {})
+    lock = load_json(control_path(root, "orchestration/capability-lock.json")).get("resolved", {})
     runtime_skills, runtime_mcp_servers, runtime_verified = runtime_capabilities(root)
     for capability_id in list_field(capabilities, "required"):
         record = lock.get(capability_id, {}) if isinstance(lock, dict) else {}

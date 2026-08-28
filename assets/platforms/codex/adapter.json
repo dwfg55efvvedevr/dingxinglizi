@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "platform": "codex",
+  "agent_format": "toml",
+  "project_agent_directory": ".codex/agents",
+  "project_skill_directory": ".agents/skills",
+  "user_agent_directory": ".codex/agents",
+  "user_skill_directory": ".agents/skills",
+  "verified_fields": ["name", "description", "developer_instructions"],
+  "model_binding": "runtime_task_override",
+  "topology_enforcement": "prompt_and_orchestrator"
+}

@@ -53,6 +53,20 @@ jobs:
       - name: Diagnose the Skill package
         run: python scripts/orchestrator.py doctor
 
+      - name: Smoke-test all native adapters
+        shell: bash
+        run: |
+          for platform in codex cursor claude-code opencode; do
+            target="/tmp/release-$platform"
+            schema_args=()
+            if [ "$platform" = opencode ]; then schema_args=(--opencode-schema v2); fi
+            python scripts/orchestrator.py platform install "$target" --platform "$platform" --scope project --apply "${schema_args[@]}"
+            python scripts/orchestrator.py platform doctor "$target" --platform "$platform" --scope project --require-level L2 "${schema_args[@]}"
+            project="/tmp/release-project-$platform"
+            python scripts/orchestrator.py init "$project" --project-name "Release $platform" --domain SaaS --platform "$platform" "${schema_args[@]}"
+            python scripts/orchestrator.py doctor "$project"
+          done
+
       - name: Create or verify release tag
         env:
           TAG: ${{ steps.version.outputs.tag }}
@@ -83,6 +97,10 @@ jobs:
             --prefix="software-project-orchestrator-$TAG/" \
             --output="dist/$ARCHIVE" \
             "$TAG"
+          if unzip -Z1 "dist/$ARCHIVE" | grep -Eq '^[^/]+/AGENTS\.md$'; then
+            echo "Release archive must not contain the local root AGENTS.md" >&2
+            exit 1
+          fi
           cd dist
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
 

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "platform": "cursor",
+  "agent_format": "markdown_yaml_frontmatter",
+  "project_agent_directory": ".cursor/agents",
+  "project_skill_directory": ".cursor/skills",
+  "user_agent_directory": ".cursor/agents",
+  "user_skill_directory": ".cursor/skills",
+  "verified_fields": ["name", "description", "model", "readonly"],
+  "model_binding": "runtime_or_frontmatter_override",
+  "topology_enforcement": "prompt_with_host_readonly"
+}

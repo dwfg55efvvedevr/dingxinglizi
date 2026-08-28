@@ -12,6 +12,8 @@ No user prompt is needed when facts are sufficient, the task is reversible and i
 
 - `BLOCKED_CONTEXT`: a business fact would materially change the solution.
 - `BLOCKED_MODEL_UNAVAILABLE`: the required model floor is unavailable.
+- `BLOCKED_UNVERIFIED_HIGH_RISK_RUNTIME`: high-risk runtime or model inventory lacks evidence.
+- `BLOCKED_REASONING_EFFORT_UNAVAILABLE`: the verified model cannot bind the required reasoning level.
 - `BLOCKED_DISCOVERY` or `BLOCKED_TRUST`: no approved capability candidate exists.
 - `BLOCKED_AUTH`: OAuth, a credential or an external account is required.
 - `BLOCKED_PERMISSION`: the capability exceeds the task's permission ceiling.
@@ -24,8 +26,10 @@ Each pause must report the exact missing authority or corrective action. Do not 
 
 Agents may recommend or discover capabilities, but only the Orchestrator modifies the catalog, trust policy, lock or MCP managed configuration. Engineering Lead may request capabilities for Workers; Workers cannot provision capabilities or spawn Agents.
 
-## What the v2 control plane does not claim
+## What the v3 control plane does not claim
 
-The local Python CLI deterministically prepares plans, Task Packages, validation results, run ledgers, recovery decisions, domain-pack locks, offline evaluations, and reports. Codex runtime tooling performs actual Agent dispatch and session management. The CLI cannot read remaining account quota, prove a model is available without runtime evidence, restore an interrupted Agent session, bypass OAuth/credentials, or determine that unknown downloaded code is trustworthy.
+The local Python CLI deterministically prepares plans, native adapters, Task Packages, validation results, run ledgers, recovery decisions, domain-pack locks, offline evaluations, and reports. The selected host performs actual Agent dispatch and session management. The CLI cannot authenticate a host, read remaining account quota, prove a model without runtime evidence, restore an interrupted native session, configure unsupported host MCP, bypass OAuth/credentials, or determine that unknown downloaded code is trustworthy.
+
+Evolution Core adds local evidence aggregation, deterministic retrospectives, and review-required improvement/eval candidates. It does not self-edit, run semantic learning, establish causality, prove an improvement, promote a test, change protected gates, use Git, publish, or deploy. “Fully automated” never includes applying an Evolution candidate.
 
 On interruption, use [recovery.md](recovery.md). Never translate a stale session record into permission to launch a duplicate Agent.

@@ -9,6 +9,8 @@ import re
 from pathlib import Path
 from typing import Iterable
 
+from project_layout import control_path
+
 
 TASK_ID_PATTERN = re.compile(r"TASK-[A-Z0-9][A-Z0-9_-]*")
 RUN_ID_PATTERN = re.compile(r"RUN-\d{8}T\d{6}Z-[a-f0-9]{6}")
@@ -80,7 +82,7 @@ def validate_task_contract(
     if not RUN_ID_PATTERN.fullmatch(run_id):
         errors.append("BLOCKED_TASK_CONTRACT: run_id must reference a v2 project run")
     else:
-        runs_root = (root / ".codex/runs").resolve()
+        runs_root = control_path(root, "runs").resolve()
         run_path = (runs_root / run_id / "run.json").resolve()
         try:
             run_path.relative_to(runs_root)

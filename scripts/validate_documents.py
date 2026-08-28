@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
 
 from _common import (
     CANONICAL_STATES,
@@ -19,6 +20,7 @@ from _common import (
     project_root,
     read_text,
 )
+from project_layout import control_path
 
 
 REQUIRED_HEADINGS = {
@@ -39,22 +41,24 @@ REQUIRED_HEADINGS = {
 
 
 def check(root) -> tuple[list[str], list[str]]:
+    root = Path(root).resolve()
     errors: list[str] = []
     warnings: list[str] = []
     if not (root / "AGENTS.md").is_file():
         errors.append("AGENTS.md is missing")
     for relative in (
-        ".codex/orchestration/model-routing-policy.json",
-        ".codex/orchestration/role-routing-policy.json",
-        ".codex/orchestration/role-plan.json",
-        ".codex/orchestration/capability-policy.json",
-        ".codex/orchestration/capability-catalog.json",
-        ".codex/orchestration/capability-lock.json",
-        ".codex/orchestration/runtime-inventory.json",
+        "model-routing-policy.json",
+        "role-routing-policy.json",
+        "role-plan.json",
+        "capability-policy.json",
+        "capability-catalog.json",
+        "capability-lock.json",
+        "runtime-inventory.json",
     ):
-        path = root / relative
+        path = control_path(root, Path("orchestration") / relative)
+        display = str(path.relative_to(root.resolve()))
         if not path.is_file():
-            errors.append(f"Required orchestration policy is missing: {relative}")
+            errors.append(f"Required orchestration policy is missing: {display}")
             continue
         try:
             content = json.loads(read_text(path))
@@ -67,7 +71,7 @@ def check(root) -> tuple[list[str], list[str]]:
 
                 validate_role_policy(content)
             if relative.endswith("role-plan.json") and content.get("status") not in {"NOT_ROUTED", "ROUTED"}:
-                errors.append(f"{relative}: status must be NOT_ROUTED or ROUTED")
+                errors.append(f"{display}: status must be NOT_ROUTED or ROUTED")
             if relative.endswith("role-plan.json"):
                 required_v2_fields = {
                     "max_active_subagents", "required_now", "execution_waves", "deferred_available",
@@ -75,24 +79,27 @@ def check(root) -> tuple[list[str], list[str]]:
                 }
                 missing_v2 = sorted(required_v2_fields - set(content))
                 if missing_v2:
-                    errors.append(f"{relative}: missing v2 fields: {', '.join(missing_v2)}")
+                    errors.append(f"{display}: missing control fields: {', '.join(missing_v2)}")
             if relative.endswith("runtime-inventory.json"):
                 provenance_fields = {"runtime_id", "host_id", "runtime_version", "evidence_source"}
                 missing_provenance = sorted(provenance_fields - set(content))
                 if missing_provenance:
-                    errors.append(f"{relative}: missing v2 provenance fields: {', '.join(missing_provenance)}")
+                    errors.append(f"{display}: missing runtime provenance fields: {', '.join(missing_provenance)}")
                 if content.get("status") not in {"UNVERIFIED", "VERIFIED"}:
-                    errors.append(f"{relative}: status must be UNVERIFIED or VERIFIED")
+                    errors.append(f"{display}: status must be UNVERIFIED or VERIFIED")
                 models = content.get("available_models")
                 if not isinstance(models, list):
-                    errors.append(f"{relative}: available_models must be a list")
+                    errors.append(f"{display}: available_models must be a list")
                 elif content.get("status") == "VERIFIED" and not models:
-                    errors.append(f"{relative}: VERIFIED inventory requires at least one available model")
+                    errors.append(f"{display}: VERIFIED inventory requires at least one available model")
                 elif isinstance(models, list):
                     supported = {"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
                     unknown = sorted(set(models) - supported)
                     if unknown:
-                        errors.append(f"{relative}: unsupported model slug(s): {', '.join(unknown)}")
+                        errors.append(
+                            f"{display}: unsupported model slug(s) in legacy Codex inventory: "
+                            + ", ".join(unknown)
+                        )
                 for field in ("available_skills", "available_mcp_servers"):
                     values = content.get(field)
                     if not isinstance(values, list) or not all(
@@ -100,14 +107,14 @@ def check(root) -> tuple[list[str], list[str]]:
                         for value in values
                     ):
                         errors.append(
-                            f"{relative}: {field} must be a list of capability IDs"
+                            f"{display}: {field} must be a list of capability IDs"
                         )
                 if content.get("status") == "VERIFIED":
                     for field in ("verified_at", "verified_by", "evidence_source"):
                         if not content.get(field):
-                            errors.append(f"{relative}: VERIFIED inventory requires {field}")
+                            errors.append(f"{display}: VERIFIED inventory requires {field}")
         except (ValueError, json.JSONDecodeError) as exc:
-            errors.append(f"{relative}: invalid JSON: {exc}")
+            errors.append(f"{display}: invalid JSON: {exc}")
     for relative in REQUIRED_DOCS:
         path = root / relative
         if not path.is_file():
@@ -140,8 +147,8 @@ def check(root) -> tuple[list[str], list[str]]:
             if status.get("complexity") not in {"Simple", "Standard", "Complex"}:
                 errors.append("docs/project-status.json: complexity must be Simple, Standard, or Complex")
             execution = status.get("execution_control", {})
-            if execution.get("model_routing_policy") != "1.2.0":
-                errors.append("docs/project-status.json: model_routing_policy must be 1.2.0")
+            if execution.get("model_routing_policy") not in {"1.2.0", "2.0.0"}:
+                errors.append("docs/project-status.json: model_routing_policy must be 1.2.0 or 2.0.0")
             if execution.get("role_routing_policy") != "1.2.0":
                 errors.append("docs/project-status.json: role_routing_policy must be 1.2.0")
             if execution.get("capability_policy") != "1.1.0":
@@ -193,14 +200,15 @@ def check(root) -> tuple[list[str], list[str]]:
             for gate in ("problem", "solution", "release_evidence"):
                 if gate not in status.get("quality_gates", {}):
                     errors.append(f"docs/project-status.json: missing quality gate '{gate}'")
-    shared = root / ".codex" / "agents" / "shared-rules.md"
-    if not shared.is_file():
-        errors.append(".codex/agents/shared-rules.md is missing")
-    else:
-        shared_text = read_text(shared)
-        for marker in ("run_id", "PASS_WITH_ACCEPTED_RISKS", "Quality Governor", "Only Orchestrator writes the global run ledger"):
-            if marker not in shared_text:
-                errors.append(f".codex/agents/shared-rules.md: missing v2 contract marker: {marker}")
+    layouts = [
+        ("codex", root / ".codex/agents", ".toml", False),
+        ("cursor", root / ".cursor/agents", ".md", True),
+        ("claude-code", root / ".claude/agents", ".md", True),
+        ("opencode", root / ".opencode/agents", ".md", True),
+    ]
+    active_layouts = [item for item in layouts if item[1].is_dir()]
+    if not active_layouts:
+        errors.append("No native Agent adapter is installed; render one supported platform before dispatch")
     task_template = root / "tasks/TASK.template.yaml"
     if not task_template.is_file():
         errors.append("tasks/TASK.template.yaml is missing")
@@ -209,17 +217,29 @@ def check(root) -> tuple[list[str], list[str]]:
         for marker in ('schema_version: 2', 'run_id: "NOT_ATTACHED"', 'source_input_fingerprint: "BLOCKING_UNKNOWN"'):
             if marker not in task_text:
                 errors.append(f"tasks/TASK.template.yaml: missing v2 contract marker: {marker}")
-    for agent in REQUIRED_AGENTS:
-        path = root / ".codex" / "agents" / f"{agent}.toml"
-        if not path.is_file():
-            errors.append(f"Required custom Agent config is missing: .codex/agents/{agent}.toml")
-            continue
-        text = read_text(path)
-        for field in ("name", "description", "developer_instructions"):
-            if not re.search(rf"(?m)^{re.escape(field)}\s*=", text):
-                errors.append(f".codex/agents/{agent}.toml: required field '{field}' is missing")
-        if "shared-rules.md" not in text:
-            errors.append(f".codex/agents/{agent}.toml: does not load shared-rules.md")
+    for platform, directory, suffix, hyphenated in active_layouts:
+        combined = ""
+        for agent in REQUIRED_AGENTS:
+            filename = agent.replace("_", "-") if hyphenated else agent
+            path = directory / f"{filename}{suffix}"
+            display = str(path.relative_to(root.resolve()))
+            if not path.is_file():
+                errors.append(f"Required {platform} Agent config is missing: {display}")
+                continue
+            text = read_text(path)
+            combined += "\n" + text
+            if suffix == ".toml":
+                for field in ("name", "description", "developer_instructions"):
+                    if not re.search(rf"(?m)^{re.escape(field)}\s*=", text):
+                        errors.append(f"{display}: required field '{field}' is missing")
+            elif not text.startswith("---\n") or "description:" not in text.split("---", 2)[1]:
+                errors.append(f"{display}: invalid Markdown Agent frontmatter")
+        shared = directory / "shared-rules.md"
+        if shared.is_file():
+            combined += "\n" + read_text(shared)
+        for marker in ("run_id", "PASS_WITH_ACCEPTED_RISKS", "Quality Governor", "Only Orchestrator"):
+            if marker not in combined:
+                errors.append(f"{platform} Agent adapter is missing shared contract marker: {marker}")
     return errors, warnings
 
 

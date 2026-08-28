@@ -27,7 +27,7 @@ risk_profile:
   failed_attempts: 0
   failure_type: "none"
 execution_profile:
-  policy_version: "1.2.0"
+  policy_version: "{{MODEL_POLICY_VERSION}}"
   route_fingerprint: "BLOCKING_UNKNOWN"
   routing_mode: "explicit_spawn_override"
   availability_source: "BLOCKING_UNKNOWN"
@@ -35,9 +35,12 @@ execution_profile:
   available_models: []
   status: "PENDING_ROUTE"
   capability_tier: "BLOCKING_UNKNOWN"
+  platform: "BLOCKING_UNKNOWN"
   preferred_model: "BLOCKING_UNKNOWN"
   selected_model: "BLOCKING_UNKNOWN"
+  selected_provider: "BLOCKING_UNKNOWN"
   model_reasoning_effort: "BLOCKING_UNKNOWN"
+  actual_model_attested: false
   fallback_models: []
   routing_reasons: []
   attempt: 1

@@ -4,4 +4,4 @@ Store sanitized evidence referenced by `docs/10-test-plan.md`, such as screensho
 
 Do not store credentials, tokens, production personal data, customer secrets, unredacted logs, or proprietary content that is unnecessary for acceptance. Name files with their acceptance or defect ID, for example `AC-012-settings-error-mobile.png`.
 
-Acceptance artifacts belong here. Machine-oriented run records live in `.codex/runs/`; they coordinate recovery and evidence references but are not a source of business truth.
+Acceptance artifacts belong here. Machine-oriented run records live in `.dingxinglizi/runs/`; unmigrated v2 projects continue to use `.codex/runs/`. They coordinate recovery and evidence references but are not a source of business truth.

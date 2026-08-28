@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified local control plane for Software Project Orchestrator v2."""
+"""DingXingLiZi v3 control plane with explicit v2 compatibility."""
 
 from __future__ import annotations
 
@@ -18,9 +18,32 @@ from dispatch_receipt import record_dispatch_receipt
 from doctor import diagnose, print_human
 from domain_packs import apply_pack, list_packs, load_pack
 from evaluate_routing import evaluate
+from evolution import collect as evolution_collect
+from evolution import eval_candidates as evolution_eval_candidates
+from evolution import evolution_init, feedback as evolution_feedback
+from evolution import propose as evolution_propose
+from evolution import retrospect as evolution_retrospect
+from evolution import status as evolution_status
+from evolution import CATEGORIES as EVOLUTION_CATEGORIES
+from evolution import KINDS as EVOLUTION_KINDS
+from evolution import RESULTS as EVOLUTION_RESULTS
+from evolution import ROLES as EVOLUTION_ROLES
+from evolution import SEVERITIES as EVOLUTION_SEVERITIES
+from evolution_store import EvolutionBlocked
 from init_project import initialize
 from lifecycle import transition as transition_lifecycle
+from migrate_project import apply as apply_migration
+from migrate_project import plan as plan_migration
 from model_routing import KNOWN_TASK_TYPES
+from platform_install import install_platform
+from project_layout import control_path
+from platform_runtime import (
+    CAPABILITY_TIERS, OPENCODE_SCHEMAS, PLATFORM_CHOICES, REASONING_LEVELS,
+    build_runtime_manifest, detect_platforms, doctor_platform,
+    load_runtime_manifest, render_adapter_files, render_project_adapter,
+    resolve_model, resolve_opencode_schema,
+    write_json_non_overwriting,
+)
 from resolve_capabilities import resolve as resolve_capabilities
 from route_roles import route_project
 from run_state import checkpoint as record_checkpoint
@@ -46,8 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument("--project-name", required=True)
     init_parser.add_argument("--domain", required=True)
     init_parser.add_argument("--complexity", choices=["Simple", "Standard", "Complex"], default="Standard")
+    init_parser.add_argument("--platform", choices=("auto",) + PLATFORM_CHOICES, default="auto")
+    init_parser.add_argument("--opencode-schema", choices=OPENCODE_SCHEMAS, default="auto")
     init_parser.add_argument("--domain-pack", choices=[item["id"] for item in list_packs()])
     init_parser.add_argument("--dry-run", action="store_true")
+
+    migrate_parser = sub.add_parser("migrate", help="Preview or apply a non-destructive v2 control-state migration")
+    migrate_parser.add_argument("project_dir")
+    migrate_parser.add_argument("--apply", action="store_true")
+    migrate_parser.add_argument("--include-evolution", action="store_true")
 
     plan_parser = sub.add_parser("plan", help="Preview or persist the current-stage minimum role plan")
     plan_parser.add_argument("project_dir")
@@ -117,6 +147,45 @@ def build_parser() -> argparse.ArgumentParser:
     capability_parser.add_argument("--required", action="append", required=True)
     capability_parser.add_argument("--apply", action="store_true")
 
+    platform_parser = sub.add_parser("platform", help="Detect, install, render, and verify native host adapters")
+    platform_sub = platform_parser.add_subparsers(dest="platform_command", required=True)
+    platform_detect = platform_sub.add_parser("detect", help="Probe supported runtime executables without changing them")
+    platform_detect.add_argument("--platform", choices=PLATFORM_CHOICES)
+    platform_render = platform_sub.add_parser("render", help="Render only one platform's project Agent profiles")
+    platform_render.add_argument("project_dir")
+    platform_render.add_argument("--platform", required=True, choices=PLATFORM_CHOICES)
+    platform_render.add_argument("--update", action="store_true", help="Update differing generated profiles")
+    platform_render.add_argument("--opencode-schema", choices=OPENCODE_SCHEMAS, default="auto")
+    platform_install_parser = platform_sub.add_parser("install", help="Plan or explicitly apply a user/project install")
+    platform_install_parser.add_argument("target_dir", nargs="?")
+    platform_install_parser.add_argument("--platform", required=True, choices=PLATFORM_CHOICES)
+    platform_install_parser.add_argument("--scope", required=True, choices=["user", "project"])
+    platform_install_parser.add_argument("--apply", action="store_true", help="Write the planned files; default is preview")
+    platform_install_parser.add_argument("--update", action="store_true", help="Update differing installed files")
+    platform_install_parser.add_argument("--opencode-schema", choices=OPENCODE_SCHEMAS, default="auto")
+    platform_doctor = platform_sub.add_parser("doctor", help="Report honest L1-L4 compatibility for one target")
+    platform_doctor.add_argument("target_dir", nargs="?")
+    platform_doctor.add_argument("--platform", required=True, choices=PLATFORM_CHOICES)
+    platform_doctor.add_argument("--scope", default="project", choices=["user", "project"])
+    platform_doctor.add_argument("--manifest", type=Path)
+    platform_doctor.add_argument("--opencode-schema", choices=OPENCODE_SCHEMAS, default="auto")
+    platform_doctor.add_argument("--require-level", choices=["L1", "L2", "L3", "L4"])
+    platform_manifest = platform_sub.add_parser("runtime-manifest", help="Capture executable and sourced model-inventory evidence")
+    platform_manifest.add_argument("--platform", required=True, choices=PLATFORM_CHOICES)
+    platform_manifest.add_argument("--project-dir")
+    platform_manifest.add_argument("--models-file", type=Path)
+    platform_manifest.add_argument("--evidence-source", default="")
+    platform_manifest.add_argument("--models-verified", action="store_true")
+    platform_manifest.add_argument("--dispatch-receipt", type=Path)
+    platform_manifest.add_argument("--output", type=Path)
+    platform_manifest.add_argument("--update", action="store_true")
+    platform_resolve = platform_sub.add_parser("model-resolve", help="Resolve a logical capability tier from a runtime manifest")
+    platform_resolve.add_argument("manifest", type=Path)
+    platform_resolve.add_argument("--tier", required=True, choices=CAPABILITY_TIERS)
+    platform_resolve.add_argument("--reasoning", default="medium", choices=REASONING_LEVELS)
+    platform_resolve.add_argument("--risk", action="append", default=[])
+    platform_resolve.add_argument("--risk-level", default="normal", choices=["low", "normal", "high"])
+
     eval_parser = sub.add_parser("eval", help="Run deterministic offline routing evaluations")
     eval_parser.add_argument("--suite", type=Path)
     eval_parser.add_argument("--json", action="store_true")
@@ -130,6 +199,36 @@ def build_parser() -> argparse.ArgumentParser:
     apply_parser.add_argument("project_dir")
     apply_parser.add_argument("pack_id")
     apply_parser.add_argument("--dry-run", action="store_true")
+
+    evolution_parser = sub.add_parser("evolution", help="Manage the project-local, review-gated Evolution Core")
+    evolution_sub = evolution_parser.add_subparsers(dest="evolution_command", required=True)
+    evolution_init_parser = evolution_sub.add_parser("init", help="Explicitly initialize an isolated Evolution workspace")
+    evolution_init_parser.add_argument("project_dir")
+    collect_parser = evolution_sub.add_parser("collect", help="Collect one structurally validated completed run")
+    collect_parser.add_argument("project_dir")
+    collect_parser.add_argument("--run-id")
+    feedback_parser = evolution_sub.add_parser("feedback", help="Record sanitized, evidence-linked feedback")
+    feedback_parser.add_argument("project_dir")
+    feedback_parser.add_argument("--kind", required=True, choices=EVOLUTION_KINDS)
+    feedback_parser.add_argument("--result", required=True, choices=EVOLUTION_RESULTS)
+    feedback_parser.add_argument("--severity", required=True, choices=EVOLUTION_SEVERITIES)
+    feedback_parser.add_argument("--category", required=True, choices=EVOLUTION_CATEGORIES)
+    feedback_parser.add_argument("--summary", required=True)
+    feedback_parser.add_argument("--evidence", action="append", required=True)
+    feedback_parser.add_argument("--run-id")
+    feedback_parser.add_argument("--task-id")
+    feedback_parser.add_argument("--role", choices=EVOLUTION_ROLES)
+    retrospect_parser = evolution_sub.add_parser("retrospect", help="Generate a deterministic evidence retrospective")
+    retrospect_parser.add_argument("project_dir")
+    retrospect_parser.add_argument("--run-id")
+    propose_parser = evolution_sub.add_parser("propose", help="Generate review-required improvement proposal drafts")
+    propose_parser.add_argument("project_dir")
+    propose_parser.add_argument("--retrospective")
+    candidate_parser = evolution_sub.add_parser("eval-candidates", help="Generate an isolated regression-eval candidate draft")
+    candidate_parser.add_argument("project_dir")
+    candidate_parser.add_argument("--proposal")
+    evolution_status_parser = evolution_sub.add_parser("status", help="Inspect Evolution without mutating it")
+    evolution_status_parser.add_argument("project_dir")
     return parser
 
 
@@ -149,11 +248,66 @@ def main() -> int:
             return 0 if result["status"] in {"READY", "READY_WITH_LIMITATIONS"} else 3
         if args.command == "init":
             root = project_root(args.project_dir)
-            initialize(root, args.project_name.strip(), args.domain.strip(), args.complexity, args.dry_run)
+            selected_platform = args.platform
+            if selected_platform == "auto":
+                detection = detect_platforms()
+                selected_platform = detection["selected_platform"]
+                if not selected_platform:
+                    found = [
+                        name for name, probe in detection["platforms"].items()
+                        if probe["status"] != "NOT_FOUND"
+                    ]
+                    if found:
+                        raise ValueError(
+                            "auto platform detection is ambiguous (%s); pass --platform explicitly"
+                            % ", ".join(found)
+                        )
+                    # Backward-compatible format choice only. This does not claim a
+                    # Codex runtime exists; platform doctor will report it unverified.
+                    selected_platform = "codex"
+                    print("WARNING: no runtime executable detected; rendering the backward-compatible Codex adapter")
+            # Resolve and render the host schema before project initialization.
+            # The initializer validates template + adapter paths together and
+            # renders every payload before its first write, preventing a failed
+            # adapter from leaving an unrecoverable half-initialized project.
+            selected_opencode_schema = (
+                resolve_opencode_schema(args.opencode_schema)
+                if selected_platform == "opencode" else ""
+            )
+            adapter_files = render_adapter_files(
+                selected_platform,
+                opencode_schema=selected_opencode_schema or args.opencode_schema,
+            )
+            initialize(
+                root, args.project_name.strip(), args.domain.strip(), args.complexity,
+                args.dry_run, platform_neutral=True,
+                generated_files=adapter_files,
+            )
+            if args.dry_run:
+                print(f"Platform adapter to render: {selected_platform}")
+            else:
+                adapter_result = {
+                    "status": "RENDERED",
+                    "platform": selected_platform,
+                    "scope": "project",
+                    "root": str(root),
+                    "created": [str(root / relative) for relative in sorted(adapter_files)],
+                    "updated": [],
+                    "unchanged": [],
+                    "conflicts": [],
+                }
+                if selected_platform == "opencode":
+                    adapter_result["adapter_schema"] = selected_opencode_schema
+                print(json.dumps({"platform_adapter": adapter_result}, ensure_ascii=False, indent=2))
             if args.domain_pack and not args.dry_run:
                 print(json.dumps(apply_pack(root, args.domain_pack), ensure_ascii=False, indent=2))
             elif args.domain_pack and args.dry_run:
                 print(json.dumps({"domain_pack": args.domain_pack, "status": "DRY_RUN_AFTER_INITIALIZATION"}, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "migrate":
+            root = project_root(args.project_dir)
+            result = apply_migration(root, args.include_evolution) if args.apply else plan_migration(root, args.include_evolution)
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
         if args.command == "plan":
             result = route_project(
@@ -232,6 +386,82 @@ def main() -> int:
             result, blocked = resolve_capabilities(project_root(args.project_dir), sorted(set(args.required)), args.apply)
             print(json.dumps({"mode": "apply" if args.apply else "plan", "capabilities": result}, ensure_ascii=False, indent=2, sort_keys=True))
             return 3 if blocked else 0
+        if args.command == "platform":
+            if args.platform_command == "detect":
+                result = detect_platforms(args.platform)
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 0
+            if args.platform_command == "render":
+                result = render_project_adapter(
+                    project_root(args.project_dir), args.platform, update=args.update,
+                    opencode_schema=args.opencode_schema,
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 3 if result["status"] == "BLOCKED_CONFLICT" else 0
+            if args.platform_command == "install":
+                if args.target_dir:
+                    target = Path(args.target_dir).expanduser().resolve()
+                elif args.scope == "user":
+                    target = Path.home().resolve()
+                else:
+                    raise ValueError("project scope requires target_dir")
+                result = install_platform(
+                    target, args.platform, scope=args.scope,
+                    apply=args.apply, update=args.update,
+                    opencode_schema=args.opencode_schema,
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 3 if result["status"] == "BLOCKED_CONFLICT" else 0
+            if args.platform_command == "doctor":
+                if args.target_dir:
+                    target = Path(args.target_dir).expanduser().resolve()
+                elif args.scope == "user":
+                    target = Path.home().resolve()
+                else:
+                    target = Path.cwd().resolve()
+                manifest = load_runtime_manifest(args.manifest) if args.manifest else None
+                result = doctor_platform(
+                    args.platform, target, scope=args.scope, manifest=manifest,
+                    opencode_schema=args.opencode_schema,
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                if args.require_level:
+                    actual = int(result["compatibility_level"][1:])
+                    required = int(args.require_level[1:])
+                    return 3 if actual < required else 0
+                return 3 if result["compatibility_level"] == "L0" else 0
+            if args.platform_command == "runtime-manifest":
+                result = build_runtime_manifest(
+                    args.platform, models_file=args.models_file,
+                    evidence_source=args.evidence_source,
+                    models_verified=args.models_verified,
+                    dispatch_receipt=args.dispatch_receipt,
+                )
+                output_path = args.output
+                allowed_root = None
+                if output_path is None and args.project_dir:
+                    allowed_root = project_root(args.project_dir)
+                    output_path = control_path(
+                        allowed_root,
+                        "orchestration/runtime-manifest.json",
+                    )
+                if output_path:
+                    write_result = write_json_non_overwriting(
+                        output_path, result, update=args.update, allowed_root=allowed_root,
+                    )
+                    print(json.dumps({"manifest": result, "write": write_result}, ensure_ascii=False, indent=2, sort_keys=True))
+                    return 3 if write_result["status"] == "BLOCKED_CONFLICT" else 0
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 0
+            if args.platform_command == "model-resolve":
+                result = resolve_model(
+                    load_runtime_manifest(args.manifest), args.tier,
+                    reasoning_effort=args.reasoning,
+                    risk_flags=args.risk, risk_level=args.risk_level,
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+                return 3 if result["status"].startswith("BLOCKED") else 0
+            raise AssertionError(f"Unhandled platform command: {args.platform_command}")
         if args.command == "eval":
             result = evaluate(args.suite) if args.suite else evaluate()
             if args.json:
@@ -252,7 +482,33 @@ def main() -> int:
                 result = apply_pack(project_root(args.project_dir), args.pack_id, args.dry_run)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0
+        if args.command == "evolution":
+            root = project_root(args.project_dir)
+            if args.evolution_command == "init":
+                result = evolution_init(root)
+            elif args.evolution_command == "collect":
+                result = evolution_collect(root, args.run_id)
+            elif args.evolution_command == "feedback":
+                result = evolution_feedback(
+                    root, kind=args.kind, result=args.result, severity=args.severity,
+                    category=args.category, summary=args.summary,
+                    evidence_paths=args.evidence, run_id=args.run_id,
+                    task_id=args.task_id, role=args.role,
+                )
+            elif args.evolution_command == "retrospect":
+                result = evolution_retrospect(root, args.run_id)
+            elif args.evolution_command == "propose":
+                result = evolution_propose(root, args.retrospective)
+            elif args.evolution_command == "eval-candidates":
+                result = evolution_eval_candidates(root, args.proposal)
+            else:
+                result = evolution_status(root)
+            print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            return 3 if result.get("status") == "BLOCKED" else 0
         raise AssertionError(f"Unhandled command: {args.command}")
+    except EvolutionBlocked as exc:
+        print(json.dumps(exc.payload(), ensure_ascii=False, indent=2, sort_keys=True))
+        return 3
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2

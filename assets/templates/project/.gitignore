@@ -1,0 +1,3 @@
+# Project-local runtime records may contain process metadata and must stay local.
+.codex/evolution/
+.dingxinglizi/evolution/

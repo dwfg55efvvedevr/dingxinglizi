@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "type": "platform_execution_receipt",
+  "platform": "BLOCKING_PLATFORM",
+  "task_id": "BLOCKING_TASK_ID",
+  "agent": "BLOCKING_CANONICAL_ROLE_ID",
+  "actual_provider": "BLOCKING_PROVIDER",
+  "actual_model": "BLOCKING_MODEL_ID",
+  "actual_reasoning": "BLOCKING_REASONING_LEVEL",
+  "runtime_version": "BLOCKING_RUNTIME_VERSION",
+  "evidence_source": "BLOCKING_HOST_EVIDENCE_SOURCE",
+  "recorded_at": "BLOCKING_UTC_TIMESTAMP",
+  "attestation": "VERIFIED_RUNTIME",
+  "receipt_fingerprint": "BLOCKING_SHA256"
+}

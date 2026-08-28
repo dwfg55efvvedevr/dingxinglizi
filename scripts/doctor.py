@@ -13,7 +13,10 @@ from typing import Any
 from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_AGENTS, REQUIRED_DOCS, SKILL_ROOT, project_root
 from _common import parse_frontmatter
 from domain_packs import list_packs
+from evolution import status as evolution_status
+from evolution_store import EvolutionBlocked
 from role_routing import role_plan_fingerprint
+from project_layout import control_path, control_relative, layout_report
 from state_io import load_json_object, safe_project_path
 from validate_documents import check as validate_project_documents
 
@@ -22,9 +25,17 @@ SKILL_FILES = [
     "SKILL.md", "VERSION", "agents/openai.yaml", "scripts/orchestrator.py",
     "scripts/init_project.py", "scripts/route_roles.py", "scripts/check_project_status.py",
     "scripts/lifecycle.py",
+    "scripts/evolution.py", "scripts/evolution_store.py",
+    "scripts/platform_runtime.py", "scripts/platform_install.py",
+    "scripts/project_layout.py", "scripts/migrate_project.py",
     "assets/templates/project/docs/project-status.json", "evals/routing-v2.json",
+    "assets/platforms/common/role-catalog.json",
+    "assets/platforms/common/common-prompt.md",
+    "assets/platforms/common/execution-receipt.template.json",
+    "assets/platforms/codex/adapter.json", "assets/platforms/cursor/adapter.json",
+    "assets/platforms/claude-code/adapter.json", "assets/platforms/opencode/adapter.json",
     "references/run-ledger.md", "references/recovery.md", "references/evaluation.md",
-    "references/domain-packs.md", "references/migration.md",
+    "references/domain-packs.md", "references/migration.md", "references/platform-adapters.md",
 ]
 
 
@@ -91,7 +102,7 @@ def diagnose(project: Path | None = None) -> dict[str, Any]:
         pack_ok = pack_ids == expected_packs
         checks.append(_check(
             "skill.domain-packs", "PASS" if pack_ok else "FAIL", f"bundled={sorted(pack_ids)}",
-            "Restore all six validated v2 domain packs." if not pack_ok else "",
+            "Restore all six validated domain packs." if not pack_ok else "",
         ))
     except (OSError, ValueError) as exc:
         checks.append(_check("skill.domain-packs", "FAIL", str(exc), "Repair invalid bundled domain pack JSON."))
@@ -103,13 +114,15 @@ def diagnose(project: Path | None = None) -> dict[str, Any]:
             checks.append(_check(
                 f"project.file.{relative}", "PASS" if path.is_file() else "FAIL",
                 f"{'Found' if path.is_file() else 'Missing'}: {relative}",
-                "Run orchestrator.py init for a new project or merge the missing v2 template manually." if not path.is_file() else "",
+                "Run orchestrator.py init for a new project or merge the missing current template manually." if not path.is_file() else "",
             ))
         status = _json_check(root / "docs/project-status.json", "project.status-json", checks)
-        role_policy = _json_check(root / ".codex/orchestration/role-routing-policy.json", "project.role-policy", checks)
-        model_policy = _json_check(root / ".codex/orchestration/model-routing-policy.json", "project.model-policy", checks)
-        inventory = _json_check(root / ".codex/orchestration/runtime-inventory.json", "runtime.inventory", checks)
-        plan = _json_check(root / ".codex/orchestration/role-plan.json", "project.role-plan", checks)
+        layout = layout_report(root)
+        checks.append(_check("project.control-layout", "PASS", json.dumps(layout, sort_keys=True)))
+        role_policy = _json_check(control_path(root, "orchestration/role-routing-policy.json"), "project.role-policy", checks)
+        model_policy = _json_check(control_path(root, "orchestration/model-routing-policy.json"), "project.model-policy", checks)
+        inventory = _json_check(control_path(root, "orchestration/runtime-inventory.json"), "runtime.inventory", checks)
+        plan = _json_check(control_path(root, "orchestration/role-plan.json"), "project.role-plan", checks)
         if status is not None:
             state = status.get("current_state")
             valid_state = state in set(CANONICAL_STATES) | INTERRUPT_STATES
@@ -156,31 +169,44 @@ def diagnose(project: Path | None = None) -> dict[str, Any]:
                     f"project.{policy_name}-policy-version", "PASS" if bool(policy.get("policy_version")) else "FAIL",
                     f"policy_version={policy.get('policy_version')}", "Restore the generated policy file." if not policy.get("policy_version") else "",
                 ))
-        missing_agents = [name for name in REQUIRED_AGENTS if not (root / ".codex/agents" / f"{name}.toml").is_file()]
-        checks.append(_check(
-            "project.agent-profiles", "PASS" if not missing_agents else "FAIL",
-            f"Missing profiles: {missing_agents}", "Restore missing profiles from the Skill template." if missing_agents else "",
-        ))
         document_errors, document_warnings = validate_project_documents(root)
         for index, error in enumerate(document_errors, start=1):
             checks.append(_check(
                 f"project.contract.{index}", "FAIL", error,
-                "Merge or restore the current v2 project contract before dispatch.",
+                "Merge or restore the current project contract before dispatch.",
             ))
         for index, warning in enumerate(document_warnings, start=1):
             checks.append(_check(f"project.contract-warning.{index}", "WARN", warning))
         try:
-            runs = safe_project_path(root, ".codex/runs")
+            runs = safe_project_path(root, control_relative(root, "runs"))
             check_target = runs if runs.exists() else runs.parent
             writable = check_target.is_dir() and os.access(check_target, os.W_OK)
             status = "PASS" if runs.is_dir() and writable else ("WARN" if writable else "FAIL")
             evidence = f"Run ledger: {runs}" if runs.is_dir() else f"Run ledger will be created on first run: {runs}"
             checks.append(_check(
                 "project.run-ledger", status, evidence,
-                "Make the project-local .codex/runs directory writable without redirecting it outside the project." if not writable else "",
+                "Make the project-local control-plane runs directory writable without redirecting it outside the project." if not writable else "",
             ))
         except (OSError, ValueError) as exc:
-            checks.append(_check("project.run-ledger", "FAIL", str(exc), "Remove path/symlink escape and recreate project-local .codex/runs."))
+            checks.append(_check("project.run-ledger", "FAIL", str(exc), "Remove path/symlink escape and recreate the project-local control-plane runs directory."))
+        try:
+            evolution = evolution_status(root)
+            evolution_ok = evolution["status"] in {"READY", "NOT_INITIALIZED"}
+            exposure_ok = evolution.get("git_reason_code") == "OK"
+            check_status = "PASS" if evolution_ok and exposure_ok else "WARN"
+            checks.append(_check(
+                "project.evolution-core", check_status,
+                f"status={evolution['status']}, reason={evolution['reason_code']}, git={evolution.get('git_state')}",
+                (
+                    "Evolution is optional and never blocks core commands. Explicitly initialize it, repair its local state, "
+                    "or ensure the active control-plane evolution directory is ignored and untracked before Evolution writes."
+                ) if check_status == "WARN" else "",
+            ))
+        except (OSError, ValueError, EvolutionBlocked) as exc:
+            checks.append(_check(
+                "project.evolution-core", "WARN", f"Optional Evolution inspection failed: {exc}",
+                "Back up and inspect only the active control-plane evolution directory; core project validation remains independent.",
+            ))
 
     config_fail = any(item["status"] == "FAIL" and item["category"] == "configuration" for item in checks)
     runtime_fail = any(item["status"] == "FAIL" and item["category"] == "runtime" for item in checks)
