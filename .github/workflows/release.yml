@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+      - RELEASE_NOTES.md
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid VERSION: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "archive=software-project-orchestrator-v$version.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Compile scripts
+        run: python -m py_compile scripts/*.py
+
+      - name: Run unit tests
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Run deterministic routing evals
+        run: python scripts/orchestrator.py eval
+
+      - name: Diagnose the Skill package
+        run: python scripts/orchestrator.py doctor
+
+      - name: Create or verify release tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "$TAG^{commit}" >/dev/null 2>&1; then
+            tagged_commit="$(git rev-parse "$TAG^{commit}")"
+            current_commit="$(git rev-parse HEAD)"
+            if [[ "$tagged_commit" != "$current_commit" ]]; then
+              echo "$TAG already points to $tagged_commit, not $current_commit" >&2
+              exit 1
+            fi
+          else
+            git tag -a "$TAG" -m "Software Project Orchestrator $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Build release assets
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          ARCHIVE: ${{ steps.version.outputs.archive }}
+        shell: bash
+        run: |
+          mkdir -p dist
+          git archive --format=zip \
+            --prefix="software-project-orchestrator-$TAG/" \
+            --output="dist/$ARCHIVE" \
+            "$TAG"
+          cd dist
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCHIVE: ${{ steps.version.outputs.archive }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              "dist/$ARCHIVE" \
+              "dist/$ARCHIVE.sha256" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              "dist/$ARCHIVE" \
+              "dist/$ARCHIVE.sha256" \
+              --title "Software Project Orchestrator v$VERSION" \
+              --notes-file RELEASE_NOTES.md \
+              --verify-tag
+          fi
