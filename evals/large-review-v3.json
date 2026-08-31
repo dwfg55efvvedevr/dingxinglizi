@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "name": "software-project-orchestrator-large-review-v3",
+  "policy_versions": {"review": "1"},
+  "cases": [
+    {
+      "id": "explicit-risk-lens-covers-neutral-file-names",
+      "kind": "review_plan",
+      "input": {
+        "entries": [
+          {"path": "src/plain.py", "size_bytes": 20, "disposition": "INCLUDED"}
+        ],
+        "modules": [{"module_id": "module-src", "root": "src"}],
+        "disposition_counts": {"INCLUDED": 1},
+        "required_risks": ["privacy"]
+      },
+      "expect": {
+        "status": "READY",
+        "primary_shards": 1,
+        "cross_cut_shards": 1,
+        "declared_files": 1,
+        "required_risk_lenses": ["privacy"]
+      }
+    },
+    {
+      "id": "review-plan-splits-before-context-overflow",
+      "kind": "review_plan",
+      "input": {
+        "entries": [
+          {"path": "src/a.py", "size_bytes": 20, "disposition": "INCLUDED"},
+          {"path": "src/b.py", "size_bytes": 20, "disposition": "INCLUDED"},
+          {"path": "src/c.py", "size_bytes": 20, "disposition": "INCLUDED"}
+        ],
+        "modules": [{"module_id": "module-src", "root": "src"}],
+        "disposition_counts": {"INCLUDED": 3},
+        "budget": {"max_files": 2, "max_bytes": 100, "max_estimated_tokens": 100}
+      },
+      "expect": {
+        "status": "READY",
+        "primary_shards": 2,
+        "cross_cut_shards": 0,
+        "oversized_files": 0,
+        "declared_files": 3,
+        "budget_semantics": "STATIC_ESTIMATE_ONLY_NOT_RUNTIME_TOKEN_USAGE",
+        "coverage_claim_limit": "PLAN_COVERS_DECLARED_INCLUDED_FILES; HEURISTICS_DO_NOT_PROVE_SEMANTIC_COMPLETENESS"
+      }
+    },
+    {
+      "id": "oversized-file-fails-closed",
+      "kind": "review_plan",
+      "input": {
+        "entries": [{"path": "src/huge.py", "size_bytes": 1000, "disposition": "INCLUDED"}],
+        "modules": [{"module_id": "module-src", "root": "src"}],
+        "disposition_counts": {"INCLUDED": 1},
+        "budget": {"max_files": 5, "max_bytes": 100, "max_estimated_tokens": 1000}
+      },
+      "expect": {
+        "status": "BLOCKED_OVERSIZED_FILE",
+        "primary_shards": 0,
+        "oversized_files": 1,
+        "declared_files": 0,
+        "coverage_claim_limit": "NO_COVERAGE_CLAIM_WHILE_OVERSIZED_FILE_IS_BLOCKED"
+      }
+    },
+    {
+      "id": "blocked-inventory-disposition-fails-closed",
+      "kind": "review_plan",
+      "input": {
+        "entries": [{"path": "external/module", "size_bytes": 0, "disposition": "BLOCKED_SUBMODULE_UNRESOLVED"}],
+        "modules": [],
+        "disposition_counts": {"BLOCKED_SUBMODULE_UNRESOLVED": 1}
+      },
+      "expect": {
+        "status": "BLOCKED_INVENTORY_DISPOSITION",
+        "primary_shards": 0,
+        "cross_cut_shards": 0,
+        "coverage_claim_limit": "NO_COVERAGE_CLAIM_WHILE_INVENTORY_HAS_BLOCKED_DISPOSITIONS"
+      }
+    },
+    {
+      "id": "exact-findings-dedupe-without-losing-lineage",
+      "kind": "findings_merge",
+      "input": {
+        "findings": [
+          {"finding_id": "FIND-AUTH-001", "shard_id": "SHARD-0001", "target_fingerprint": "target", "path": "src/auth.py", "start_line": 10, "end_line": 10, "severity": "P1", "category": "security", "rule_id": "AUTH-1", "title": "Missing guard", "description": "No policy", "evidence": "Call is unguarded"},
+          {"finding_id": "FIND-AUTH-002", "shard_id": "SHARD-0002", "target_fingerprint": "target", "path": "src/auth.py", "start_line": 10, "end_line": 10, "severity": "P1", "category": "security", "rule_id": "AUTH-1", "title": "Missing guard", "description": "No policy", "evidence": "Call is unguarded"}
+        ]
+      },
+      "expect": {
+        "input_count": 2,
+        "merged_count": 1,
+        "exact_duplicate_groups": 1,
+        "severity_conflicts": 0,
+        "possible_duplicates": 0,
+        "merge_policy": "EXACT_ONLY; POSSIBLE_DUPLICATES_AND_SEVERITY_CONFLICTS_ARE_PRESERVED"
+      }
+    },
+    {
+      "id": "severity-conflict-is-never-silently-merged",
+      "kind": "findings_merge",
+      "input": {
+        "findings": [
+          {"finding_id": "FIND-AUTH-101", "shard_id": "SHARD-0001", "target_fingerprint": "target", "path": "src/auth.py", "start_line": 10, "end_line": 10, "severity": "P0", "category": "security", "rule_id": "AUTH-1", "title": "Missing guard", "description": "No policy", "evidence": "Call is unguarded"},
+          {"finding_id": "FIND-AUTH-102", "shard_id": "SHARD-0002", "target_fingerprint": "target", "path": "src/auth.py", "start_line": 10, "end_line": 10, "severity": "P2", "category": "security", "rule_id": "AUTH-1", "title": "Missing guard", "description": "No policy", "evidence": "Call is unguarded"}
+        ]
+      },
+      "expect": {
+        "input_count": 2,
+        "merged_count": 2,
+        "exact_duplicate_groups": 0,
+        "severity_conflicts": 1,
+        "possible_duplicates": 0,
+        "merge_policy": "EXACT_ONLY; POSSIBLE_DUPLICATES_AND_SEVERITY_CONFLICTS_ARE_PRESERVED"
+      }
+    },
+    {
+      "id": "similar-findings-stay-visible",
+      "kind": "findings_merge",
+      "input": {
+        "findings": [
+          {"finding_id": "FIND-AUTH-201", "shard_id": "SHARD-0001", "target_fingerprint": "target", "path": "src/auth.py", "start_line": 10, "end_line": 10, "severity": "P1", "category": "security", "title": "Missing guard", "description": "No policy", "evidence": "Call is unguarded"},
+          {"finding_id": "FIND-AUTH-202", "shard_id": "SHARD-0002", "target_fingerprint": "target", "path": "src/auth.py", "start_line": 10, "end_line": 10, "severity": "P1", "category": "security", "title": "Policy absent", "description": "Principal is ignored", "evidence": "No authorization call"}
+        ]
+      },
+      "expect": {
+        "input_count": 2,
+        "merged_count": 2,
+        "exact_duplicate_groups": 0,
+        "severity_conflicts": 0,
+        "possible_duplicates": 1,
+        "merge_policy": "EXACT_ONLY; POSSIBLE_DUPLICATES_AND_SEVERITY_CONFLICTS_ARE_PRESERVED"
+      }
+    }
+  ]
+}

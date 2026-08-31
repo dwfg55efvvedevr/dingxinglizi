@@ -101,6 +101,16 @@ class ModelRoutingTests(unittest.TestCase):
         )
         self.assertEqual(exhausted["status"], "BLOCKED_ATTEMPTS_EXHAUSTED")
 
+        context_limited = route_task(
+            complexity="Complex", task_type="module_review", role="engineering_lead",
+            failed_attempts=1, failure_type="context_limit",
+        )
+        self.assertEqual(context_limited["capability_tier"], "Expert")
+        self.assertIn(
+            "context-limit:split-or-narrow-task-before-model-escalation",
+            context_limited["routing_reasons"],
+        )
+
     def test_high_risk_route_does_not_silently_downgrade(self) -> None:
         result = route_task(
             complexity="Complex", task_type="security_review", role="architect",
@@ -192,6 +202,27 @@ class RoleRoutingTests(unittest.TestCase):
         )
         self.assertLessEqual(max(map(len, plan["execution_waves"])), 2)
 
+    def test_large_repository_review_opens_only_one_governed_worker_slot(self) -> None:
+        balanced = route_roles(
+            complexity="Complex", stage="CODE_REVIEW", quota_mode="balanced",
+            signals=["large_repository_review", "cross_module"],
+        )
+        self.assertEqual(balanced["required_now"], ["engineering_lead"])
+        self.assertEqual(balanced["max_concurrent_workers"], 1)
+        self.assertEqual(
+            balanced["delegable_workers"],
+            ["frontend_worker", "backend_worker", "ai_worker", "data_worker", "test_worker"],
+        )
+        economy = route_roles(
+            complexity="Complex", stage="CODE_REVIEW", quota_mode="economy",
+            signals=["large_repository_review"],
+        )
+        self.assertEqual(economy["delegable_workers"], [])
+        self.assertIn(
+            "engineering-lead-runs-shards-sequentially:worker-would-exceed-economy-budget",
+            economy["inline_actions"],
+        )
+
     def test_quality_governor_model_floor_is_task_routed(self) -> None:
         standard = route_task(complexity="Standard", task_type="solution_challenge", role="quality_governor")
         complex_route = route_task(complexity="Complex", task_type="solution_challenge", role="quality_governor")
@@ -260,6 +291,7 @@ class CapabilityTests(unittest.TestCase):
         self.assertIn('preferred_model: "gpt-5.6-sol"', text)
         self.assertIn('model_reasoning_effort: "high"', text)
         self.assertIn('required:\n    - "github-read"', text)
+        self.assertIn('review_contract:\n  status: "NOT_APPLICABLE"', text)
         blocked = run("check_execution_plan.py", self.root, "tasks/TASK-AUTO-1.yaml")
         self.assertEqual(blocked.returncode, 3, blocked.stdout)
         self.assertIn("BLOCKED_CAPABILITY", blocked.stdout)

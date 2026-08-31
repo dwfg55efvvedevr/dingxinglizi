@@ -1,0 +1,18 @@
+{
+  "finding_id": "FIND-AUTH-001",
+  "shard_id": "SHARD-0001",
+  "target_fingerprint": "REPLACE_WITH_REVIEW_TARGET_FINGERPRINT",
+  "path": "src/example.py",
+  "start_line": 1,
+  "end_line": 1,
+  "severity": "P1",
+  "category": "security",
+  "rule_id": "OPTIONAL-RULE-ID",
+  "title": "Concrete defect title",
+  "description": "Observed behavior and impact.",
+  "evidence": "Reproducible code, test, log, or trace evidence.",
+  "recommendation": "Smallest safe corrective action.",
+  "status": "OPEN",
+  "confidence": "HIGH",
+  "references": []
+}

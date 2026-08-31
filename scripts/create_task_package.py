@@ -17,6 +17,7 @@ from model_routing import (
 from platform_runtime import load_runtime_manifest
 from project_layout import control_path
 from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION
+from large_repository_review import repair_contract, shard_contract
 from run_state import latest_run_id
 from state_io import atomic_write_text, load_json_object, safe_project_path
 
@@ -36,6 +37,114 @@ def yaml_list(values: list[str], indent: int = 2) -> str:
     return "\n" + "\n".join(f"{prefix}- {quoted(value)}" for value in values)
 
 
+def review_yaml(contract: dict[str, object] | None) -> str:
+    if contract is None:
+        return '''review_contract:
+  status: "NOT_APPLICABLE"
+  review_id: "NOT_APPLICABLE"
+  mode: "NOT_APPLICABLE"
+  phase: "NOT_APPLICABLE"
+  shard_id: "NOT_APPLICABLE"
+  baseline_commit: "NOT_APPLICABLE"
+  target_commit: "NOT_APPLICABLE"
+  target_fingerprint: "NOT_APPLICABLE"
+  repository_manifest_fingerprint: "NOT_APPLICABLE"
+  review_plan_fingerprint: "NOT_APPLICABLE"
+  shard_input_fingerprint: "NOT_APPLICABLE"
+  trust_policy_fingerprint: "NOT_APPLICABLE"
+  trusted_instruction_files: []
+  repository_execution_authorized: false
+  default_execution_policy: "NOT_APPLICABLE"
+  included_modules: []
+  included_files: []
+  pinned_file_objects_json: "NOT_APPLICABLE"
+  exclusion_index: "NOT_APPLICABLE"
+  risk_lenses: []
+  findings_output: "NOT_APPLICABLE"
+  evidence_output: "NOT_APPLICABLE"
+  source_write_authorized: false
+  fresh_session_required: false
+  compact_handoff_required: false
+  session_attestation_required: false
+  context_budget:
+    max_files: 0
+    max_bytes: 0
+    max_estimated_tokens: 0
+    estimated_files: 0
+    estimated_bytes: 0
+    estimated_tokens: 0
+    estimate_method: "NOT_APPLICABLE"
+'''
+    budget = contract.get("context_budget", {})
+    if not isinstance(budget, dict):
+        raise ValueError("Review contract context budget is invalid")
+    objects = json.dumps(contract.get("pinned_file_objects", {}), ensure_ascii=False, sort_keys=True)
+    return f'''review_contract:
+  status: "ROUTED"
+  review_id: {quoted(str(contract['review_id']))}
+  mode: {quoted(str(contract['mode']))}
+  phase: {quoted(str(contract['phase']))}
+  shard_id: {quoted(str(contract['shard_id']))}
+  baseline_commit: {quoted(str(contract.get('baseline_commit') or 'NOT_APPLICABLE'))}
+  target_commit: {quoted(str(contract.get('target_commit') or 'NOT_APPLICABLE'))}
+  target_fingerprint: {quoted(str(contract['target_fingerprint']))}
+  repository_manifest_fingerprint: {quoted(str(contract['repository_manifest_fingerprint']))}
+  review_plan_fingerprint: {quoted(str(contract['review_plan_fingerprint']))}
+  shard_input_fingerprint: {quoted(str(contract['shard_input_fingerprint']))}
+  trust_policy_fingerprint: {quoted(str(contract['trust_policy_fingerprint']))}
+  trusted_instruction_files:{yaml_list([str(value) for value in contract.get('trusted_instruction_files', [])], 4)}
+  repository_execution_authorized: {str(bool(contract.get('repository_execution_authorized'))).lower()}
+  default_execution_policy: {quoted(str(contract['default_execution_policy']))}
+  included_modules:{yaml_list([str(value) for value in contract.get('included_modules', [])], 4)}
+  included_files:{yaml_list([str(value) for value in contract.get('included_files', [])], 4)}
+  pinned_file_objects_json: {quoted(objects)}
+  exclusion_index: {quoted(str(contract['exclusion_index']))}
+  risk_lenses:{yaml_list([str(value) for value in contract.get('risk_lenses', [])], 4)}
+  findings_output: {quoted(str(contract['findings_output']))}
+  evidence_output: {quoted(str(contract['evidence_output']))}
+  source_write_authorized: false
+  fresh_session_required: true
+  compact_handoff_required: true
+  session_attestation_required: true
+  context_budget:
+    max_files: {int(budget['max_files'])}
+    max_bytes: {int(budget['max_bytes'])}
+    max_estimated_tokens: {int(budget['max_estimated_tokens'])}
+    estimated_files: {int(budget['estimated_files'])}
+    estimated_bytes: {int(budget['estimated_bytes'])}
+    estimated_tokens: {int(budget['estimated_tokens'])}
+    estimate_method: {quoted(str(budget['estimate_method']))}
+'''
+
+
+def repair_yaml(contract: dict[str, object] | None) -> str:
+    if contract is None:
+        return '''repair_contract:
+  status: "NOT_APPLICABLE"
+  review_id: "NOT_APPLICABLE"
+  repair_plan_id: "NOT_APPLICABLE"
+  repair_plan_fingerprint: "NOT_APPLICABLE"
+  phase: "NOT_APPLICABLE"
+  finding_ids: []
+  allowed_source_files: []
+  target_fingerprint: "NOT_APPLICABLE"
+  source_write_authorized: false
+  evidence_output: "NOT_APPLICABLE"
+'''
+    return f'''repair_contract:
+  status: "ROUTED"
+  review_id: {quoted(str(contract['review_id']))}
+  repair_plan_id: {quoted(str(contract['repair_plan_id']))}
+  repair_plan_fingerprint: {quoted(str(contract['repair_plan_fingerprint']))}
+  phase: {quoted(str(contract['phase']))}
+  finding_ids:{yaml_list([str(value) for value in contract.get('finding_ids', [])], 4)}
+  allowed_source_files:{yaml_list([str(value) for value in contract.get('allowed_source_files', [])], 4)}
+  target_fingerprint: {quoted(str(contract['target_fingerprint']))}
+  source_write_authorized: {str(bool(contract.get('source_write_authorized'))).lower()}
+  evidence_output: {quoted(str(contract['evidence_output']))}
+'''
+
+
 def create(
     root: Path,
     task_id: str,
@@ -51,6 +160,8 @@ def create(
     required_capabilities: list[str] | None = None,
     optional_capabilities: list[str] | None = None,
     available_models: list[str] | None = None,
+    review_shard_id: str | None = None,
+    repair_plan_id: str | None = None,
 ) -> Path:
     task_id = task_id.upper()
     if not re.fullmatch(r"TASK-[A-Z0-9][A-Z0-9_-]*", task_id):
@@ -107,6 +218,28 @@ def create(
             raise ValueError(f"owner {owner} is not required_now or delegable in the current role plan")
         if stage != role_plan.get("current_stage"):
             raise ValueError("Task Package stage does not match the current role plan stage")
+    if review_shard_id and repair_plan_id:
+        raise ValueError("A Task Package cannot bind both a review shard and a repair plan")
+    review_contract: dict[str, object] | None = None
+    routed_repair_contract: dict[str, object] | None = None
+    if review_shard_id:
+        if stage != "CODE_REVIEW":
+            raise ValueError("Review shard Task Packages must use CODE_REVIEW stage")
+        review_contract = shard_contract(root, review_shard_id)
+        if task_type != review_contract.get("task_type"):
+            raise ValueError(f"Review shard requires task_type={review_contract.get('task_type')}")
+        suggested = str(review_contract.get("suggested_owner"))
+        if owner not in {suggested, "engineering_lead"}:
+            raise ValueError(f"Review shard owner must be {suggested} or engineering_lead")
+    if repair_plan_id:
+        if stage != "CODE_REVIEW":
+            raise ValueError("Repair lifecycle Task Packages must use CODE_REVIEW stage")
+        phase = "REPAIR" if task_type == "review_repair" else "REREVIEW" if task_type == "review_verification" else ""
+        if not phase:
+            raise ValueError("Repair plan Task Packages require review_repair or review_verification task_type")
+        routed_repair_contract = repair_contract(root, repair_plan_id, phase=phase)
+        if owner != routed_repair_contract.get("owner"):
+            raise ValueError(f"Repair {phase} owner must be {routed_repair_contract.get('owner')}")
     attached_run_id = "NOT_ATTACHED"
     try:
         candidate_run_id = latest_run_id(root)
@@ -176,6 +309,14 @@ def create(
                 f"invalid capability id {capability_id!r}; use only letters, digits, underscore, and hyphen"
             )
     may_spawn_workers = "true" if owner == "engineering_lead" else "false"
+    review_contract_text = review_yaml(review_contract)
+    repair_contract_text = repair_yaml(routed_repair_contract)
+    review_allowed_files = (
+        [str(review_contract["findings_output"]), str(review_contract["evidence_output"])]
+        if review_contract is not None else []
+    )
+    if routed_repair_contract is not None:
+        review_allowed_files = [str(value) for value in routed_repair_contract.get("allowed_files", [])]
     content = f'''schema_version: 2
 run_id: {quoted(attached_run_id)}
 task_id: {quoted(task_id)}
@@ -233,6 +374,8 @@ quality_review:
   selected_lenses: []
   adversarial_tests: []
   quality_case_ref: "BLOCKING_UNKNOWN"
+{review_contract_text.rstrip()}
+{repair_contract_text.rstrip()}
 capability_requirements:
   required:{yaml_list(required_capabilities, 4)}
   optional:{yaml_list(optional_capabilities, 4)}
@@ -261,7 +404,7 @@ acceptance_criteria:
     when: "BLOCKING_UNKNOWN"
     then: "BLOCKING_UNKNOWN"
     evidence: "BLOCKING_UNKNOWN"
-allowed_files: []
+allowed_files:{yaml_list(review_allowed_files, 2)}
 forbidden:
   - "Do not change approved scope, business rules, permissions, contracts, dependencies, or external systems without Orchestrator routing."
   - "Do not perform production deployment, external messaging, purchases, credential use, destructive actions, or irreversible migrations without explicit authorization."
@@ -298,6 +441,8 @@ def main() -> int:
     parser.add_argument("--required-capability", action="append", default=[])
     parser.add_argument("--optional-capability", action="append", default=[])
     parser.add_argument("--available-model", action="append", default=[], help="Runtime-verified model slug; repeat as needed")
+    parser.add_argument("--review-shard", help="Bind this Task Package to one active large-review shard")
+    parser.add_argument("--repair-plan", help="Bind this Task Package to one active repair plan")
     args = parser.parse_args()
     try:
         root = project_root(args.project_dir)
@@ -306,6 +451,8 @@ def main() -> int:
             args.task_type, args.risk, args.failed_attempts, args.failure_type,
             args.required_capability, args.optional_capability,
             args.available_model,
+            args.review_shard,
+            args.repair_plan,
         )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

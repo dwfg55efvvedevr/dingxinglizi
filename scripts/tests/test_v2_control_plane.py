@@ -20,7 +20,7 @@ from doctor import diagnose  # noqa: E402
 from check_missing_modules import check as check_missing_modules  # noqa: E402
 from check_traceability import check as check_traceability  # noqa: E402
 from domain_packs import apply_pack, list_packs  # noqa: E402
-from evaluate_routing import evaluate  # noqa: E402
+from evaluate_routing import evaluate, evaluate_bundled  # noqa: E402
 from lifecycle import transition  # noqa: E402
 from init_project import initialize  # noqa: E402
 from run_state import checkpoint, create_run, report, resume  # noqa: E402
@@ -45,7 +45,7 @@ class V2ControlPlaneTests(unittest.TestCase):
     def test_unified_cli_version_doctor_and_eval(self) -> None:
         version = cli("version")
         self.assertEqual(version.returncode, 0, version.stdout)
-        self.assertEqual(version.stdout.strip(), "3.0.0")
+        self.assertEqual(version.stdout.strip(), "3.1.0")
         doctor = cli("doctor", "--json")
         self.assertEqual(doctor.returncode, 0, doctor.stdout)
         self.assertEqual(json.loads(doctor.stdout)["status"], "READY")
@@ -269,6 +269,12 @@ class V2ControlPlaneTests(unittest.TestCase):
             }), encoding="utf-8")
             result = evaluate(suite)
             self.assertEqual(result["failed"], 1)
+
+    def test_bundled_evaluation_includes_large_review_invariants(self) -> None:
+        result = evaluate_bundled()
+        self.assertEqual(result["failed"], 0)
+        self.assertIn("software-project-orchestrator-large-review-v3", result["suites"])
+        self.assertGreaterEqual(result["total"], 29)
 
 
 if __name__ == "__main__":

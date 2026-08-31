@@ -28,6 +28,9 @@ jobs:
         run: python scripts/orchestrator.py eval
       - name: Diagnose the Skill package
         run: python scripts/orchestrator.py doctor
+
+      - name: Verify release metadata and installed-guide consistency
+        run: python scripts/check_release_consistency.py
       - name: Test all platform adapters
         shell: bash
         run: |

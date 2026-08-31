@@ -17,7 +17,7 @@ from create_task_package import create as create_task
 from dispatch_receipt import record_dispatch_receipt
 from doctor import diagnose, print_human
 from domain_packs import apply_pack, list_packs, load_pack
-from evaluate_routing import evaluate
+from evaluate_routing import evaluate, evaluate_bundled
 from evolution import collect as evolution_collect
 from evolution import eval_candidates as evolution_eval_candidates
 from evolution import evolution_init, feedback as evolution_feedback
@@ -32,6 +32,7 @@ from evolution import SEVERITIES as EVOLUTION_SEVERITIES
 from evolution_store import EvolutionBlocked
 from init_project import initialize
 from lifecycle import transition as transition_lifecycle
+from large_repository_review import main as large_review_main
 from migrate_project import apply as apply_migration
 from migrate_project import plan as plan_migration
 from model_routing import KNOWN_TASK_TYPES
@@ -108,6 +109,14 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("project_dir")
     report_parser.add_argument("--run-id")
 
+    review_parser = sub.add_parser(
+        "review",
+        add_help=False,
+        help="Run the bounded large-repository review engine (use `review --help`)",
+    )
+    review_parser.add_argument("-h", "--help", action="store_true", dest="review_help")
+    review_parser.add_argument("review_args", nargs=argparse.REMAINDER)
+
     validate_parser = sub.add_parser("validate", help="Run document, completeness, traceability, and optional gate checks")
     validate_parser.add_argument("project_dir")
     validate_parser.add_argument("--target", choices=CANONICAL_STATES + sorted(INTERRUPT_STATES))
@@ -135,6 +144,8 @@ def build_parser() -> argparse.ArgumentParser:
     task_parser.add_argument("--required-capability", action="append", default=[])
     task_parser.add_argument("--optional-capability", action="append", default=[])
     task_parser.add_argument("--available-model", action="append")
+    task_parser.add_argument("--review-shard", help="Bind the Task Package to one active review shard")
+    task_parser.add_argument("--repair-plan", help="Bind the Task Package to one active repair/rereview plan")
 
     preflight_parser = sub.add_parser("preflight", help="Validate a Task Package and optionally record its READY receipt")
     preflight_parser.add_argument("project_dir")
@@ -335,6 +346,8 @@ def main() -> int:
             content, path = create_report(project_root(args.project_dir), args.run_id)
             print(json.dumps({"report": str(path), "content": content}, ensure_ascii=False, indent=2))
             return 0
+        if args.command == "review":
+            return large_review_main(["--help"] if args.review_help else args.review_args)
         if args.command in {"validate", "status"}:
             root = project_root(args.project_dir)
             if args.command == "status":
@@ -364,6 +377,8 @@ def main() -> int:
                 args.objective, args.stage, args.return_to, args.task_type, args.risk,
                 args.failed_attempts, args.failure_type, args.required_capability,
                 args.optional_capability, args.available_model,
+                args.review_shard,
+                args.repair_plan,
             )
             print(f"CREATED_DRAFT: {path}")
             return 0
@@ -463,11 +478,11 @@ def main() -> int:
                 return 3 if result["status"].startswith("BLOCKED") else 0
             raise AssertionError(f"Unhandled platform command: {args.platform_command}")
         if args.command == "eval":
-            result = evaluate(args.suite) if args.suite else evaluate()
+            result = evaluate(args.suite) if args.suite else evaluate_bundled()
             if args.json:
                 print(json.dumps(result, ensure_ascii=False, indent=2))
             else:
-                print(f"Routing eval: {result['passed']}/{result['total']} passed")
+                print(f"Control-plane eval: {result['passed']}/{result['total']} passed")
                 for item in result["results"]:
                     if not item["passed"]:
                         print(f"FAIL: {item['id']}: {'; '.join(item['errors'])}")

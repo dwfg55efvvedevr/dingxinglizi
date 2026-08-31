@@ -26,6 +26,8 @@ One active role maps to one active task. A second task for the same professional
 
 In `economy`, Engineering Lead implements directly because a child Worker would consume a second active slot. In `balanced` or `quality_first`, `--signal implementation_workers` exposes a bounded `delegable_workers` pool during `IN_DEVELOPMENT`; Engineering Lead and at most one Worker may be active together. A Worker must return to/review with Engineering Lead and cannot spawn anything.
 
+At `CODE_REVIEW`, the evidenced signal `large_repository_review` enables the same one-Worker slot only in `balanced` or `quality_first`. Each repository shard uses one fresh, bounded, read-only Worker task and exits before another shard starts. `economy` keeps the slot closed, so Engineering Lead coordinates or performs shards sequentially. Large scope never raises the two-session ceiling and never activates every Worker at once. Cross-module contract review remains a later Architect wave when the normal architecture signals require it; final QA activates only at `READY_FOR_QA`.
+
 ## Complexity means availability across the lifecycle
 
 - `Simple`: Requirements may cover product-completeness responsibility; UX may cover UI; Engineering Lead may cover low-risk architecture. Separate specialists activate only on a signal.
@@ -34,7 +36,7 @@ In `economy`, Engineering Lead implements directly because a child Worker would 
 
 ## Activation signals
 
-Pass only evidenced signals: `unclear_requirements`, `novel_problem`, `evidence_conflict`, `coverage_risk`, `user_facing`, `flow_complexity`, `visual_system`, `accessibility`, `new_contracts`, `architecture_risk`, `cross_module`, `contract_delta`, `implementation_workers`, `high_impact`, `regulated`, `release_risk`, or `repeated_failure`.
+Pass only evidenced signals: `unclear_requirements`, `novel_problem`, `evidence_conflict`, `coverage_risk`, `user_facing`, `flow_complexity`, `visual_system`, `accessibility`, `new_contracts`, `architecture_risk`, `cross_module`, `contract_delta`, `implementation_workers`, `large_repository_review`, `high_impact`, `regulated`, `release_risk`, or `repeated_failure`.
 
 Examples:
 

@@ -28,7 +28,14 @@ SKILL_FILES = [
     "scripts/evolution.py", "scripts/evolution_store.py",
     "scripts/platform_runtime.py", "scripts/platform_install.py",
     "scripts/project_layout.py", "scripts/migrate_project.py",
+    "scripts/large_repository_review.py", "scripts/review_repository.py",
+    "scripts/review_planning.py", "scripts/review_findings.py", "scripts/review_state.py",
+    "scripts/check_release_consistency.py",
     "assets/templates/project/docs/project-status.json", "evals/routing-v2.json",
+    "evals/large-review-v3.json",
+    "assets/templates/review/context-budget.template.json",
+    "assets/templates/review/shard-result.template.json",
+    "assets/templates/review/finding.template.json",
     "assets/platforms/common/role-catalog.json",
     "assets/platforms/common/common-prompt.md",
     "assets/platforms/common/execution-receipt.template.json",
@@ -36,6 +43,8 @@ SKILL_FILES = [
     "assets/platforms/claude-code/adapter.json", "assets/platforms/opencode/adapter.json",
     "references/run-ledger.md", "references/recovery.md", "references/evaluation.md",
     "references/domain-packs.md", "references/migration.md", "references/platform-adapters.md",
+    "references/large-repository-review.md", "references/context-hygiene.md",
+    "references/review-and-repair.md", "references/max-capability-guide.md",
 ]
 
 

@@ -1,0 +1,7 @@
+{
+  "session_id": "QA-SESSION-REPLACE-ME",
+  "run_id": "RUN-REPLACE-ME",
+  "fresh_session_attested": true,
+  "independent_qa_attested": true,
+  "attested_by": "orchestrator"
+}

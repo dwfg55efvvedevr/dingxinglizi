@@ -1,0 +1,6 @@
+{
+  "session_id": "FIX-SESSION-REPLACE-ME",
+  "repair_plan_id": "REPAIR-01",
+  "fresh_session_attested": true,
+  "attested_by": "orchestrator"
+}

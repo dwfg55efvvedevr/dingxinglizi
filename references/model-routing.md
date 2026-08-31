@@ -12,6 +12,8 @@ Route per Task Package, never permanently per role. The portable policy decides 
 - Expert: architecture, security, permissions, migrations, concurrency, high-impact QA, or repeated valid reasoning failure.
 - Exceptional: rare, explicitly escalated work after schema conflict, high-impact ambiguity, or repeated valid failure; never the default.
 
+Large-review examples: repository inventory/manifest classification may use Economy; ordinary module review, finding triage, repair and re-review use Advanced at normal risk; cross-module contracts and security/permission/migration review require Expert. Actual provider/model selection still comes only from verified host runtime evidence.
+
 Reasoning effort is a separate requirement: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. A provider mapping may expose only a subset.
 
 ## Evidence chain

@@ -16,4 +16,6 @@ Quality Governor owns no rework state. Its challenge routes to the earliest row 
 
 Each defect record includes ID, severity P0–P3, failed criterion, environment/preconditions, reproduction, expected/actual, evidence, source owner, contributors, affected artifacts, correction required, re-entry gate, retest and regression range.
 
+Large-repository findings use the same source routing. Exact duplicates may share one repair lineage only when target, location, category and root-cause fingerprints match. Similar findings stay visible as `POSSIBLE_DUPLICATE`; contradictory findings become `CONFLICT_REVIEW_REQUIRED`. Neither state may be dropped merely to reduce the issue count. A repaired finding remains open until a different session re-reviews it against the current target and QA confirms the required regression range.
+
 QA reports `PASS`, `PASS_WITH_ACCEPTED_RISKS`, `FAIL`, or `BLOCKED`. Only an authorized decision owner may accept a material risk; QA records but does not invent that acceptance. P0/P1 defects and unaccepted risks block `QA_PASS`.

@@ -1,4 +1,4 @@
 interface:
   display_name: "dingxinglizi"
-  short_description: "Portable, on-demand multi-agent software delivery"
-  default_prompt: "Use $software-project-orchestrator to initialize or safely resume this project, detect the current host, route only the minimum necessary roles and an evidence-backed model tier, preserve project-wide consistency, challenge unsupported assumptions, and require independent QA before completion."
+  short_description: "Portable multi-agent delivery and large-repository review"
+  default_prompt: "Use $software-project-orchestrator to initialize or safely resume this project, inspect project facts and challenge unsupported assumptions, route only the minimum necessary roles and evidence-backed model tier, preserve project-wide consistency, and require independent QA. For a large repository, pin the target, inventory declared scope and exclusions, create budgeted module and risk review shards with fresh-session handoffs, keep review_only read-only unless review_and_fix is explicitly authorized, and claim at most COMPLETE_FOR_DECLARED_SCOPE."

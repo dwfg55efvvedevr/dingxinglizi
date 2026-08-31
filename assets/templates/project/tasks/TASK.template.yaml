@@ -55,6 +55,49 @@ quality_review:
   selected_lenses: []
   adversarial_tests: []
   quality_case_ref: "BLOCKING_UNKNOWN"
+review_contract:
+  status: "NOT_APPLICABLE"
+  review_id: "NOT_APPLICABLE"
+  mode: "NOT_APPLICABLE"
+  phase: "NOT_APPLICABLE"
+  shard_id: "NOT_APPLICABLE"
+  baseline_commit: "NOT_APPLICABLE"
+  target_commit: "NOT_APPLICABLE"
+  repository_manifest_fingerprint: "NOT_APPLICABLE"
+  review_plan_fingerprint: "NOT_APPLICABLE"
+  shard_input_fingerprint: "NOT_APPLICABLE"
+  included_modules: []
+  included_files: []
+  excluded_paths: []
+  risk_lenses: []
+  dependency_boundary: []
+  findings_output: "NOT_APPLICABLE"
+  evidence_output: "NOT_APPLICABLE"
+  source_write_authorized: false
+  fresh_session_required: false
+  compact_handoff_required: false
+  session_attestation_required: false
+  context_budget:
+    max_files: 0
+    max_bytes: 0
+    max_estimated_tokens: 0
+    estimated_files: 0
+    estimated_bytes: 0
+    estimated_tokens: 0
+    safety_margin_percent: 0
+    rollover_threshold_percent: 0
+    estimate_method: "NOT_APPLICABLE"
+repair_contract:
+  status: "NOT_APPLICABLE"
+  review_id: "NOT_APPLICABLE"
+  repair_plan_id: "NOT_APPLICABLE"
+  repair_plan_fingerprint: "NOT_APPLICABLE"
+  phase: "NOT_APPLICABLE"
+  finding_ids: []
+  allowed_source_files: []
+  target_fingerprint: "NOT_APPLICABLE"
+  source_write_authorized: false
+  evidence_output: "NOT_APPLICABLE"
 capability_requirements:
   required: []
   optional: []

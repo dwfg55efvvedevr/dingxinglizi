@@ -53,6 +53,9 @@ jobs:
       - name: Diagnose the Skill package
         run: python scripts/orchestrator.py doctor
 
+      - name: Verify release metadata and installed-guide consistency
+        run: python scripts/check_release_consistency.py
+
       - name: Smoke-test all native adapters
         shell: bash
         run: |
@@ -67,7 +70,30 @@ jobs:
             python scripts/orchestrator.py doctor "$project"
           done
 
-      - name: Create or verify release tag
+      - name: Build and smoke-test release assets before tagging
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          ARCHIVE: ${{ steps.version.outputs.archive }}
+        shell: bash
+        run: |
+          mkdir -p dist
+          git archive --format=zip \
+            --prefix="software-project-orchestrator-$TAG/" \
+            --output="dist/$ARCHIVE" \
+            HEAD
+          if unzip -Z1 "dist/$ARCHIVE" | grep -Eq '^[^/]+/AGENTS\.md$'; then
+            echo "Release archive must not contain the local root AGENTS.md" >&2
+            exit 1
+          fi
+          mkdir -p dist/unpacked
+          unzip -q "dist/$ARCHIVE" -d dist/unpacked
+          package_root="dist/unpacked/software-project-orchestrator-$TAG"
+          python "$package_root/scripts/orchestrator.py" doctor
+          python "$package_root/scripts/orchestrator.py" eval
+          cd dist
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Create or verify release tag after validation
         env:
           TAG: ${{ steps.version.outputs.tag }}
         shell: bash
@@ -86,24 +112,6 @@ jobs:
             git push origin "$TAG"
           fi
 
-      - name: Build release assets
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-          ARCHIVE: ${{ steps.version.outputs.archive }}
-        shell: bash
-        run: |
-          mkdir -p dist
-          git archive --format=zip \
-            --prefix="software-project-orchestrator-$TAG/" \
-            --output="dist/$ARCHIVE" \
-            "$TAG"
-          if unzip -Z1 "dist/$ARCHIVE" | grep -Eq '^[^/]+/AGENTS\.md$'; then
-            echo "Release archive must not contain the local root AGENTS.md" >&2
-            exit 1
-          fi
-          cd dist
-          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
-
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,6 +121,9 @@ jobs:
         shell: bash
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Software Project Orchestrator v$VERSION" \
+              --notes-file RELEASE_NOTES.md
             gh release upload "$TAG" \
               "dist/$ARCHIVE" \
               "dist/$ARCHIVE.sha256" \

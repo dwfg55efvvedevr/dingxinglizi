@@ -1,0 +1,7 @@
+{
+  "session_id": "SESSION-REPLACE-ME",
+  "shard_id": "SHARD-0001",
+  "fresh_session_attested": true,
+  "compact_handoff_attested": true,
+  "attested_by": "orchestrator"
+}

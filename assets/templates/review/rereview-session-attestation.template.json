@@ -1,0 +1,7 @@
+{
+  "session_id": "REREVIEW-SESSION-REPLACE-ME",
+  "repair_plan_id": "REPAIR-01",
+  "fresh_session_attested": true,
+  "independent_from_session_id": "FIX-SESSION-REPLACE-ME",
+  "attested_by": "orchestrator"
+}

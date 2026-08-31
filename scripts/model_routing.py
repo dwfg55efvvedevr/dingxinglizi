@@ -19,12 +19,18 @@ MODELS = {
 }
 TIER_ORDER = list(MODELS)
 
-LOW_RISK_TASKS = {"scan", "extract", "format", "documentation", "test_run"}
+LOW_RISK_TASKS = {
+    "scan", "extract", "format", "documentation", "test_run", "repository_scan",
+}
 ADVANCED_TASKS = {
     "requirements", "product_audit", "ux", "ui", "implementation", "code_review", "qa",
     "problem_quality", "solution_challenge", "release_quality",
+    "module_review", "finding_triage", "review_repair", "review_verification",
 }
-EXPERT_TASKS = {"architecture", "security_review", "permission_design", "migration_design", "release_review"}
+EXPERT_TASKS = {
+    "architecture", "security_review", "permission_design", "migration_design", "release_review",
+    "cross_module_review",
+}
 KNOWN_TASK_TYPES = LOW_RISK_TASKS | ADVANCED_TASKS | EXPERT_TASKS
 HIGH_RISK_FLAGS = {
     "security", "privacy", "financial", "payment", "compliance", "production",
@@ -33,6 +39,7 @@ HIGH_RISK_FLAGS = {
 }
 REASONING_FAILURES = {"quality", "reasoning", "acceptance", "qa_defect", "evidence_conflict"}
 ENVIRONMENT_FAILURES = {"network", "rate_limit", "auth", "permission", "missing_input", "tool_unavailable"}
+CONTEXT_FAILURES = {"context_limit"}
 KNOWN_RISK_FLAGS = HIGH_RISK_FLAGS | {
     "ambiguity", "cross_module", "external_side_effects", "data_integrity", "vendor_lock_in",
     "accessibility", "performance", "cost", "offline", "low_reversibility", "high_impact", "ai_safety",
@@ -92,7 +99,7 @@ def route_task(
     unknown_flags = sorted(set(flags) - KNOWN_RISK_FLAGS)
     if unknown_flags:
         raise ValueError("unsupported risk flag(s): " + ", ".join(unknown_flags))
-    unknown_failure = failure_type not in {"none"} | REASONING_FAILURES | ENVIRONMENT_FAILURES
+    unknown_failure = failure_type not in {"none"} | REASONING_FAILURES | ENVIRONMENT_FAILURES | CONTEXT_FAILURES
     if unknown_failure:
         raise ValueError(f"unsupported failure_type: {failure_type}")
 
@@ -151,6 +158,8 @@ def route_task(
             reasons.append("repeated-quality-failure:raise-capability")
     elif failure_type in ENVIRONMENT_FAILURES and failed_attempts:
         reasons.append("environment-failure:no-model-escalation")
+    elif failure_type in CONTEXT_FAILURES and failed_attempts:
+        reasons.append("context-limit:split-or-narrow-task-before-model-escalation")
 
     requested_model, effort = MODELS[tier]
     effort = effort_override or effort

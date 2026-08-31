@@ -28,6 +28,7 @@ KNOWN_SIGNALS = {
     "repeated_failure", "parallel_safe", "security", "privacy", "financial",
     "payment", "compliance", "production", "migration", "concurrency",
     "consistency", "permissions", "irreversible", "ai_safety",
+    "large_repository_review",
 }
 QUALITY_TRIGGERS = {
     "novel_problem", "evidence_conflict", "high_impact", "regulated",
@@ -198,12 +199,21 @@ def route_roles(
     max_active = QUOTA_LIMITS[quota_mode]
     delegable_workers: list[str] = []
     worker_slots = 0
-    if stage == "IN_DEVELOPMENT" and "implementation_workers" in normalized and "engineering_lead" in roles:
+    worker_signal = (
+        stage == "IN_DEVELOPMENT" and "implementation_workers" in normalized
+    ) or (
+        stage == "CODE_REVIEW" and "large_repository_review" in normalized
+    )
+    if worker_signal and "engineering_lead" in roles:
         if max_active >= 2:
             delegable_workers = list(WORKER_ROLES)
             worker_slots = max_active - 1
         else:
-            inline_actions.append("engineering-lead-implements-directly:worker-would-exceed-economy-budget")
+            inline_actions.append(
+                "engineering-lead-runs-shards-sequentially:worker-would-exceed-economy-budget"
+                if stage == "CODE_REVIEW"
+                else "engineering-lead-implements-directly:worker-would-exceed-economy-budget"
+            )
     waves: list[list[str]] = []
     if roles:
         can_parallel = (

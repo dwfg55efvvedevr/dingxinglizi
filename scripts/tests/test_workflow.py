@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -369,6 +370,131 @@ class WorkflowTests(unittest.TestCase):
         )
         self.assertEqual(rejected.returncode, 2, rejected.stdout)
         self.assertIn("not required_now or delegable", rejected.stdout)
+
+    def test_generated_large_review_task_passes_real_execution_preflight(self) -> None:
+        approve_for_build(self.root)
+        status_path = self.root / "docs/project-status.json"
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["current_state"] = "CODE_REVIEW"
+        status["previous_state"] = "IN_DEVELOPMENT"
+        status["gates"]["build"] = {
+            "status": "APPROVED", "version": "1.0.0", "evidence": ["docs/08-system-design.md"],
+        }
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        run_path = next((self.root / ".codex/runs").glob("RUN-*/run.json"))
+        run_state = json.loads(run_path.read_text(encoding="utf-8"))
+        run_state["current_state"] = "CODE_REVIEW"
+        run_path.write_text(json.dumps(run_state, indent=2) + "\n", encoding="utf-8")
+
+        run("git", "--version")
+        subprocess.run(["git", "-C", str(self.root), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.email", "review@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "config", "user.name", "Review Test"], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(self.root), "commit", "-qm", "review target"], check=True)
+        target = subprocess.run(
+            ["git", "-C", str(self.root), "rev-parse", "HEAD"], text=True,
+            stdout=subprocess.PIPE, check=True,
+        ).stdout.strip()
+
+        routed = run(
+            "route_roles.py", self.root, "--stage", "CODE_REVIEW", "--quota", "balanced",
+            "--signal", "large_repository_review", "--write",
+        )
+        self.assertEqual(routed.returncode, 0, routed.stdout)
+        started = run(
+            "large_repository_review.py", "start", self.root,
+            "--baseline", target, "--target", target,
+            "--mode", "review_and_fix", "--authorize-fix",
+        )
+        self.assertEqual(started.returncode, 0, started.stdout)
+        run_id = json.loads(started.stdout)["run_id"]
+        plan_path = self.root / ".codex/runs" / run_id / "review/plan.json"
+        if not plan_path.is_file():
+            plan_path = self.root / ".dingxinglizi/runs" / run_id / "review/plan.json"
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        shard = (plan["primary_shards"] + plan["cross_cut_shards"])[0]
+        task_type = "cross_module_review" if shard["shard_kind"] == "CROSS_CUT" else "module_review"
+        created = run(
+            "create_task_package.py", self.root,
+            "--task-id", "TASK-LARGE-REVIEW-PREFLIGHT",
+            "--owner", "engineering_lead", "--reviewer", "orchestrator",
+            "--return-to", "orchestrator", "--stage", "CODE_REVIEW",
+            "--objective", "Review the immutable repository shard and return bounded evidence",
+            "--task-type", task_type, "--review-shard", shard["shard_id"],
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(created.returncode, 0, created.stdout)
+        task_path = self.root / "tasks/TASK-LARGE-REVIEW-PREFLIGHT.yaml"
+        make_task_ready(task_path)
+        preflight = run(
+            "check_execution_plan.py", self.root, task_path, "--record-ready",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(preflight.returncode, 0, preflight.stdout)
+        self.assertIn("RECORDED: evidence/dispatch/TASK-LARGE-REVIEW-PREFLIGHT.ready.json", preflight.stdout)
+        self.assertIn("READY: route matches policy", preflight.stdout)
+
+        review_dir = plan_path.parent
+        review_state = json.loads((review_dir / "review.json").read_text(encoding="utf-8"))
+        repair_plan = {
+            "repair_plan_id": "REPAIR-01-PREFLIGHT",
+            "round": 1,
+            "finding_ids": ["FIND-PREFLIGHT-001"],
+            "finding_paths": {"FIND-PREFLIGHT-001": "docs/04-prd.md"},
+            "fixer_id": "backend_worker",
+            "reviewer_id": "engineering_lead",
+            "allowed_files": ["docs/04-prd.md"],
+            "source_write_authorized": True,
+            "allowed_source_before": {"fingerprint": "fixture", "entries": []},
+            "outside_allowed_before_fingerprint": "fixture",
+            "target_fingerprint": review_state["target_fingerprint"],
+            "authorization": "EXPLICIT_REVIEW_AND_FIX",
+            "status": "PLANNED",
+            "created_at": "2026-08-31T00:00:00Z",
+        }
+        auth_keys = (
+            "repair_plan_id", "round", "finding_ids", "finding_paths", "fixer_id", "reviewer_id",
+            "allowed_files", "source_write_authorized", "target_fingerprint", "authorization",
+        )
+        compact_hash = lambda value: hashlib.sha256(
+            json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        repair_plan["authorization_fingerprint"] = compact_hash({key: repair_plan[key] for key in auth_keys})
+        repair_plan["plan_fingerprint"] = compact_hash(repair_plan)
+        repairs_path = review_dir / "repairs.json"
+        repairs = json.loads(repairs_path.read_text(encoding="utf-8"))
+        repairs["plans"].append(repair_plan)
+        repairs_path.write_text(json.dumps(repairs, indent=2) + "\n", encoding="utf-8")
+
+        status = json.loads(status_path.read_text(encoding="utf-8"))
+        status["execution_control"]["active_sessions"] = [{
+            "session_id": "engineering-review-coordinator", "task_id": "TASK-ENGINEERING-REVIEW",
+            "role": "engineering_lead", "parent_role": "orchestrator", "access_mode": "write",
+        }]
+        status_path.write_text(json.dumps(status, indent=2) + "\n", encoding="utf-8")
+        repair_created = run(
+            "create_task_package.py", self.root,
+            "--task-id", "TASK-LARGE-REPAIR-PREFLIGHT",
+            "--owner", "backend_worker", "--reviewer", "engineering_lead",
+            "--return-to", "engineering_lead", "--stage", "CODE_REVIEW",
+            "--objective", "Repair only the finding-bound authorized source",
+            "--task-type", "review_repair", "--repair-plan", repair_plan["repair_plan_id"],
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(repair_created.returncode, 0, repair_created.stdout)
+        repair_task = self.root / "tasks/TASK-LARGE-REPAIR-PREFLIGHT.yaml"
+        make_task_ready(repair_task)
+        repair_preflight = run(
+            "check_execution_plan.py", self.root, repair_task, "--record-ready",
+            "--available-model", "gpt-5.6-luna", "--available-model", "gpt-5.6-terra",
+            "--available-model", "gpt-5.6-sol",
+        )
+        self.assertEqual(repair_preflight.returncode, 0, repair_preflight.stdout)
+        self.assertIn("RECORDED: evidence/dispatch/TASK-LARGE-REPAIR-PREFLIGHT.ready.json", repair_preflight.stdout)
 
     def test_active_worker_cannot_be_orphaned(self) -> None:
         status_path = self.root / "docs/project-status.json"

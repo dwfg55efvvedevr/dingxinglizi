@@ -1,0 +1,42 @@
+{
+  "review_id": "RUN-REPLACE-ME",
+  "task_id": "TASK-REVIEW-SHARD-0001",
+  "reviewer_id": "backend_worker",
+  "review_session_id": "SESSION-REPLACE-ME",
+  "target_fingerprint": "REPLACE_WITH_REVIEW_TARGET_FINGERPRINT",
+  "inventory_fingerprint": "REPLACE_WITH_INVENTORY_FINGERPRINT",
+  "plan_fingerprint": "REPLACE_WITH_PLAN_FINGERPRINT",
+  "shard_input_fingerprint": "REPLACE_WITH_SHARD_INPUT_FINGERPRINT",
+  "trust_policy_fingerprint": "REPLACE_WITH_TRUST_POLICY_FINGERPRINT",
+  "status": "COMPLETE",
+  "reviewed_files": [
+    "REPLACE_WITH_EVERY_FILE_DECLARED_BY_THE_SHARD"
+  ],
+  "reviewed_objects": {
+    "REPLACE_WITH_EVERY_FILE_DECLARED_BY_THE_SHARD": "REPLACE_WITH_PINNED_OBJECT_ID"
+  },
+  "file_evidence": [
+    {
+      "path": "REPLACE_WITH_EVERY_FILE_DECLARED_BY_THE_SHARD",
+      "object_id": "REPLACE_WITH_PINNED_OBJECT_ID",
+      "checks_performed": [
+        "control-flow",
+        "failure-paths",
+        "declared-risk-lenses"
+      ],
+      "observation": "Concrete bounded observation for this pinned file object. Repeat one entry per reviewed file."
+    }
+  ],
+  "evidence_refs": [
+    "evidence/reviews/RUN-REPLACE-ME/SHARD-0001.md"
+  ],
+  "findings": [],
+  "handoff_summary": "Bounded review result for this shard only.",
+  "session_attestation": {
+    "session_id": "SESSION-REPLACE-ME",
+    "shard_id": "SHARD-0001",
+    "fresh_session_attested": true,
+    "compact_handoff_attested": true,
+    "attested_by": "orchestrator"
+  }
+}

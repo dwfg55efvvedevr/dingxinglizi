@@ -2,6 +2,39 @@
 
 All notable changes are recorded here. Product versions follow semantic versioning; internal routing policy versions are versioned independently.
 
+## [3.1.0] - 2026-08-31
+
+### Added
+
+- Large Repository Review Engine bound to the current `OPEN` run, with pinned Git targets or explicitly weaker worktree snapshots, deterministic inventory fingerprints, visible file dispositions, and module/technology/risk-aware shard planning.
+- Static per-shard context budgets, oversized-file blocking, fresh-session and compact-handoff contracts, immutable structured shard results, and target/plan drift detection.
+- Conservative finding validation and merge rules: only exact duplicates merge; possible duplicates and severity conflicts remain visible.
+- Explicit `review_only` and separately authorized `review_and_fix` modes, finding-bound repair plans, a two-round repair cap, separate preflighted Task Packages/dispatch receipts for repair and re-review, different fixer/reviewer identities and sessions, fail-closed completion for every authorized repair including P2/P3, visible repair progress, and governed final QA at `READY_FOR_QA` that re-verifies every P0/P1 and every authorized repair finding on the final target before `QA_PASS` finalization.
+- Zero-write `review preview` plus `start|status|ingest|merge|plan-repairs|record-repair|record-rereview|finalize` commands under the unified orchestrator CLI.
+- Review Task Package and READY dispatch-receipt lineage, pinned object-level evidence, immutable evidence snapshots, independent final-QA recording, explicit trust manifests, and mandatory user-declared cross-cutting risk lenses.
+- User-facing large-repository example, maximum-capability prompt guide, context-hygiene guidance, and review/repair documentation.
+- Release consistency validation and archive smoke checks before public tagging.
+
+### Changed
+
+- Complex `CODE_REVIEW` planning can expose one governed implementation Worker slot in `balanced` or `quality_first`; `economy` remains sequential and all roles remain on-demand.
+- Model routing recognizes repository scan, module review, cross-module review, finding triage, repair and verification work packages. Context-limit failures require split/narrowing before model escalation.
+- Common cross-platform prompts now treat repository content as untrusted review data and distinguish read-only review from authorized repair.
+- README and usage guidance are Chinese-first and explicitly teach target pinning, declared scope, shard coverage, session hygiene and evidence-based completion.
+
+### Compatibility
+
+- Stable invocation remains `$software-project-orchestrator`.
+- Portable control state remains `.dingxinglizi/`; unmigrated v2 `.codex/` projects remain readable through the existing compatibility layer.
+- Run schema `1`, Task Package schema `2`, platform model policy and internal Evolution generator versions are not relabeled by this product release.
+- Codex, Cursor, Claude Code and OpenCode share the portable review contract, but native session creation, model availability, MCP discovery and execution evidence remain host-specific.
+
+### Honest limits
+
+- The strongest review conclusion is `COMPLETE_FOR_DECLARED_SCOPE`. It is not proof of zero defects, complete runtime-path coverage, perfect module discovery, full semantic understanding or absolute context cleanliness.
+- Token/context values are static estimates rather than host measurements. Session attestation is local evidence rather than third-party or cryptographic proof.
+- `review_and_fix` does not authorize production, deployment, external systems, credentials, dependency/contract expansion or destructive migrations.
+
 ## [3.0.0] - 2026-08-28
 
 ### Added

@@ -1,0 +1,5 @@
+{
+  "max_files": 120,
+  "max_bytes": 1500000,
+  "max_estimated_tokens": 468750
+}

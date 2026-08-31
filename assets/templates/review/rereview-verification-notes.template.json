@@ -1,0 +1,3 @@
+{
+  "FIND-AUTH-001": "Reproduced the original failure against the repaired target, verified the authorization branch now rejects cross-tenant access, and reran the named regression evidence."
+}

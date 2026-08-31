@@ -1,59 +1,76 @@
 # dingxinglizi
 
-> Software Project Orchestrator v3.0 — portable multi-agent delivery for Codex, Cursor, Claude Code, and OpenCode
+> Software Project Orchestrator v3.1.0 — 可移植、按需调度、可恢复、可审查的多 Agent 软件交付 Skill
 
 [![CI](https://github.com/lizi-product-studio/dingxinglizi/actions/workflows/ci.yml/badge.svg)](https://github.com/lizi-product-studio/dingxinglizi/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/lizi-product-studio/dingxinglizi)](https://github.com/lizi-product-studio/dingxinglizi/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-`dingxinglizi` 是一套跨平台、按需调度、可恢复、可验证的多 Agent 软件交付 Skill。稳定调用名仍是：
+`dingxinglizi` 把“让一个 Agent 一直啃完整个项目”改造成一条有事实源、角色边界、阶段门禁、任务包、上下文预算、运行证据和独立 QA 的工程流程。稳定调用名仍是：
 
 ```text
 $software-project-orchestrator
 ```
 
-它把“做一个系统”变成一条有唯一事实源、职责边界、阶段门禁、任务包、运行证据和独立 QA 的工程流程。Simple、Standard、Complex 都不会一次拉起全部角色，只激活当前阶段最少且必要的角色。
+它适合新系统 0→1、老系统跨模块迭代，以及大型/复杂仓库的分片审查与有界修复。Simple、Standard、Complex 都按当前阶段只启用最少必要角色，不会为了显得“多 Agent”而一次拉满团队。
+
+## v3.1 新增：大型仓库审查引擎
+
+面对单体大仓库、monorepo、多语言、多模块或高风险代码，v3.1 会先固定目标版本、盘点文件与排除项，再按模块和风险切成有预算的审查分片。每个分片对应独立 Task Package，推荐由新会话执行并只返回结构化证据；跨模块 API、数据、权限、状态、迁移与安全问题另开横切分片。
+
+```text
+固定 target → 仓库清单 → 模块/风险分片 → 新会话审查
+           → 结果校验 → 确定性合并 → 覆盖判定
+           → [可选] 独立修复 → 不同会话复审 → 独立 QA
+```
+
+- `review_only`：默认模式；审查业务源码，但不修改业务源码。
+- `review_and_fix`：只有显式授权后才允许生成与执行有界修复计划。
+- 上下文预算是静态估算，不冒充宿主真实 token 使用量；超限时先拆分或缩小任务，而不是把更大模型当作无限上下文。
+- 修复者不能关闭自己的发现；修复、复审、最终 QA 由不同身份/会话留下证据。
+- 每个分片必须先绑定可校验 Task Package 与 READY 调度回执；COMPLETE 结果还必须逐文件绑定 pinned object、检查项和具体观察，不能用“无发现”空口完成。
+- 仓库内容默认是不可信输入；只有显式列出的指令文件进入信任清单。仓库命令、hook、安装、网络、凭据和生成代码默认不执行。
+- 文件名无法暴露的权限、隐私、数据完整性、状态机、外部副作用、发布和 AI 安全风险，可用 `--required-risk` 强制生成横切审查。
+- 仓库漂移、覆盖不足、超大文件、未知排除项或证据缺失会进入 `STALE` / `BLOCKED`，不会通过弱化口径假装完成。
+- `review_only` 的最强结论仅为 `COMPLETE_FOR_DECLARED_SCOPE`；`review_and_fix` 使用区分初始覆盖与修复目标的独立结论。两者都不等于“零缺陷”“100% 理解全部代码”或“绝对上下文干净”。
+
+详细规则见 [大型仓库审查](references/large-repository-review.md)、[上下文卫生](references/context-hygiene.md) 和 [审查—修复闭环](references/review-and-repair.md)。
 
 ## 它主要帮助你做什么
 
-- 从 0 到 1 建设新系统，或在老系统上做跨模块迭代；
-- 采集并维护业务背景、领域规则、术语、PRD、状态/权限、UX、设计系统、架构、API/数据和测试事实；
-- 从全系统角度检查功能、交互、视觉、数据、权限和前后台闭环的一致性；
-- 判断需求是否成立，要求证据、暴露假设，并在高影响未知存在时阻止盲目开发；
-- 按 `Simple / Standard / Complex` 和当前门禁动态选择角色；
-- 用 Task Package 约束目标、输入、范围、文件、能力、模型、验收证据和返回路径；
-- 将逻辑能力档映射到当前平台已验证的真实模型，而不是把某个厂商型号永久写死在角色上；
-- 在中断后通过项目本地 ledger 判断继续、重规划、人工对账或阻塞；
-- 用独立 QA 与按需 Quality Governor 阻止“实现者自验收”和迎合式结论；
-- 将已验证结果汇总成待审查的改进候选，但绝不自动改源码、降低门禁或发布。
+- 建立项目唯一事实源，维护业务背景、领域规则、术语、PRD、状态/权限、UX、设计系统、架构、API/数据和测试事实；
+- 从全系统角度检查功能、交互、视觉、权限、数据和前后台闭环一致性；
+- 质疑缺乏证据的需求与假设，在高影响未知存在时阻止盲目开发；
+- 按复杂度、阶段、风险和额度动态选择角色，而非固定启动全部角色；
+- 为每个工作包约束目标、输入、范围、文件、模型能力档、验收证据和返回路径；
+- 让大仓库按模块/风险并行审查，控制上下文污染并保留可追溯覆盖；
+- 在中断后通过项目本地 ledger 恢复、重规划、人工对账或阻塞；
+- 用独立 QA 与按需 Quality Governor 阻止实现者自验收和迎合式结论；
+- 将经过验证的经验汇总为待人工审查的改进候选，但不自动改门禁或发布。
 
-## v3.0：平台中立核心
+## 架构与角色
 
 | 层 | 责任 |
 |---|---|
-| Portable Skill | 流程、复杂度/角色/模型路由、门禁、恢复、验证与受监督改进 |
-| Native Agents | Codex、Cursor、Claude Code、OpenCode 的原生角色配置 |
+| Portable Skill | 流程、复杂度/角色/模型路由、门禁、恢复、验证、审查与受监督改进 |
+| Native Agents | Codex、Cursor、Claude Code、OpenCode 的宿主原生角色配置 |
 | Project `AGENTS.md` | 项目长期规则、权限与禁止事项 |
 | Project docs | 唯一业务事实源、版本、决策、契约和验收 |
 | MCP / connectors | GitHub、Figma、浏览器、任务系统、数据库、部署等可选外部能力 |
 
-新项目将平台中立运行状态写到 `.dingxinglizi/`。旧 v2 项目可继续直接读取 `.codex/orchestration`、`.codex/runs` 和 `.codex/evolution`；迁移是显式、预览优先、校验哈希、保留源数据的复制过程。
+常驻职责以 Orchestrator、Requirements、Product Auditor、UX、UI、Architect、Engineering Lead、QA 为基准；Quality Governor 按风险触发。Engineering Lead 只能调度 frontend/backend/AI/data/test Worker，Worker 不能继续委派。开发/修复与最终 QA 始终分离。
 
-### 支持等级
-
-| 等级 | 含义 |
+| 复杂度 | 默认执行方式 |
 |---|---|
-| L0 | Portable Skill 不可用 |
-| L1 | Skill 结构可发现 |
-| L2 | 平台中立流程、文档和脚本可用 |
-| L3 | 原生角色配置、宿主可执行文件和模型库存都有验证证据 |
-| L4 | 本地执行声明通过精确 schema、指纹及已验证模型库存/运行时版本的一致性检查 |
+| Simple | 当前阶段通常 0–1 个子 Agent；可合并职责，但工程与最终 QA 分离 |
+| Standard | 专业职责按门禁逐个启用；仅独立读任务安全并行 |
+| Complex | 完整职责在生命周期内可用，仍按波次启动；大型审查按模块与风险分片 |
 
-本仓库对四个平台的配置格式和控制合同做自动化测试；当前发布环境只真实检测到 Codex CLI。Cursor、Claude Code、OpenCode 在没有对应本机运行时和执行回执时，不会被宣称为 L4。
+`economy` 最多 1 个活动子 Agent；`balanced` 和 `quality_first` 最多 2 个，且必须满足文件所有权和角色拓扑。角色配置存在不等于角色已经启动。
 
 ## 安装
 
-需要 Python 3.9+，运行时核心只使用标准库。
+需要 Python 3.9+；运行时核心只使用标准库。
 
 ```bash
 git clone https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
@@ -61,24 +78,14 @@ cd /tmp/dingxinglizi
 python3 scripts/orchestrator.py platform detect
 ```
 
-先预览，只安装一个选定平台：
+先预览，再只安装一个平台：
 
 ```bash
 python3 scripts/orchestrator.py platform install --platform codex --scope user
-python3 scripts/orchestrator.py platform install --platform cursor --scope user
-python3 scripts/orchestrator.py platform install --platform claude-code --scope user
-python3 scripts/orchestrator.py platform install --platform opencode --scope user --opencode-schema v2
-```
-
-确认计划后，只对所选命令增加 `--apply`：
-
-```bash
 python3 scripts/orchestrator.py platform install --platform codex --scope user --apply
 ```
 
-已有文件默认不会覆盖；只有明确加 `--update` 才会更新不同的生成文件。安装器不联网、不登录、不读取凭据、不调用包管理器，也不会顺带安装其他平台。
-
-OpenCode V1 与 V2 的权限 schema 不兼容。已安装的 `opencode --version` 返回可解析的 1.x/2.x 版本时可省略 `--opencode-schema` 自动选择；离线安装、版本输出不明确或未来主版本会拒绝猜测，必须明确传 `v1` 或 `v2`。V1 生成 `permission.task`，V2 生成有序 `permissions` 与 `subagent` 规则。
+把 `codex` 换成 `cursor`、`claude-code` 或 `opencode`。OpenCode 离线或版本无法验证时必须增加 `--opencode-schema v1` 或 `v2`。已有不同文件默认不覆盖，只有明确增加 `--update` 才更新。安装器不联网、不登录、不读凭据、不调用包管理器。
 
 | 平台 | User Skill | User Agents | Project Skill | Project Agents |
 |---|---|---|---|---|
@@ -87,7 +94,7 @@ OpenCode V1 与 V2 的权限 schema 不兼容。已安装的 `opencode --version
 | Claude Code | `~/.claude/skills/` | `~/.claude/agents/` | `.claude/skills/` | `.claude/agents/` |
 | OpenCode | `~/.config/opencode/skills/` | `~/.config/opencode/agents/` | `.opencode/skills/` | `.opencode/agents/` |
 
-完整格式来源与限制见 [平台适配说明](references/platform-adapters.md)。
+四个平台共享流程与项目事实，但宿主是否真正发现配置、启动新会话、支持某个模型或记录执行回执，必须由对应运行时证据确认。生成配置不等于真实执行。
 
 ## 3 分钟开始一个项目
 
@@ -95,88 +102,67 @@ OpenCode V1 与 V2 的权限 schema 不兼容。已安装的 `opencode --version
 SPO=/path/to/dingxinglizi
 
 python3 "$SPO/scripts/orchestrator.py" init /path/to/acme-crm \
-  --project-name "Acme CRM" \
-  --domain "CRM" \
-  --complexity Standard \
-  --domain-pack crm \
-  --platform cursor
-
+  --project-name "Acme CRM" --domain "CRM" \
+  --complexity Standard --domain-pack crm --platform codex
 python3 "$SPO/scripts/orchestrator.py" doctor /path/to/acme-crm
 python3 "$SPO/scripts/orchestrator.py" transition /path/to/acme-crm --target DISCOVERY
 python3 "$SPO/scripts/orchestrator.py" plan /path/to/acme-crm --quota economy --write
 python3 "$SPO/scripts/orchestrator.py" run /path/to/acme-crm
 ```
 
-也可以在支持 Skill 的宿主中直接说：
+在支持 Skill 的宿主中直接说：
 
 ```text
-$software-project-orchestrator 初始化或安全恢复这个项目，先核实业务事实和问题质量，按当前阶段只调用最少必要角色，最终由独立 QA 验收。
+$software-project-orchestrator
+初始化或安全恢复这个项目。先核实业务事实和问题质量，按当前阶段只调用最少必要角色；把假设、风险、权限边界和验收证据写进项目，最终由独立 QA 验收。
 ```
 
-领域包内置 ecommerce、crm、saas、group-buying、ai-agent、home-services。它们只提供候选问题与检查项，不会把行业惯例伪装成已确认业务事实。
+内置 ecommerce、crm、saas、group-buying、ai-agent、home-services 领域包。它们提供候选问题与检查项，不会把行业惯例伪装成已确认事实。
 
-## 角色与额度控制
+## 大型仓库审查快速开始
 
-常驻职责以 Orchestrator、Requirements、Product Auditor、UX、UI、Architect、Engineering Lead、QA 为基准；Quality Governor 按风险触发。Engineering Lead 可调用 frontend、backend、AI、data、test Worker，但 Worker 不能继续委派。
-
-| 复杂度 | 默认执行方式 |
-|---|---|
-| Simple | 当前阶段通常 0–1 个子 Agent；合并需求/产品职责，但工程与最终 QA 分离 |
-| Standard | 专业职责按门禁逐个启用；只有明确独立的读任务可安全并行 |
-| Complex | 完整职责在生命周期内可用，仍按波次按需启动，不一次开满 |
-
-`economy` 最多 1 个活动子 Agent；`balanced` 和 `quality_first` 最多 2 个，且必须满足文件所有权与角色拓扑约束。角色配置存在不等于角色已经启动。
-
-## 跨平台模型路由
-
-v3 核心只表达 `ECONOMY / STANDARD / ADVANCED / EXPERT / EXCEPTIONAL` 与 reasoning effort。具体 provider/model 必须来自当前宿主的已验证 runtime manifest：
-
-```json
-{
-  "models": [
-    {
-      "id": "provider/model-id",
-      "provider": "provider-name",
-      "capability_tier": "EXPERT",
-      "reasoning_efforts": ["high", "xhigh"]
-    }
-  ]
-}
-```
+审查引擎绑定一个已存在的 `OPEN` run；先完成项目诊断和运行初始化。`preview` 零写入展示目标、清单、排除项和分片计划，确认后再用同参数 `start` 持久化：
 
 ```bash
-python3 "$SPO/scripts/orchestrator.py" platform runtime-manifest \
-  --platform cursor \
-  --project-dir /path/to/acme-crm \
-  --models-file /path/to/models.json \
-  --models-verified \
-  --evidence-source "Cursor model picker exported 2026-08-28"
+python3 "$SPO/scripts/orchestrator.py" review preview /path/to/project \
+  --baseline main --target HEAD --mode review_only \
+  --required-risk permissions --required-risk privacy
+python3 "$SPO/scripts/orchestrator.py" review start /path/to/project \
+  --baseline main --target HEAD --mode review_only \
+  --required-risk permissions --required-risk privacy
 
-python3 "$SPO/scripts/orchestrator.py" platform model-resolve \
-  /path/to/acme-crm/.dingxinglizi/orchestration/runtime-manifest.json \
-  --tier EXPERT --reasoning high --risk security
+python3 "$SPO/scripts/orchestrator.py" review status /path/to/project
+python3 "$SPO/scripts/orchestrator.py" review contract /path/to/project SHARD-0001
 ```
 
-`--models-verified` 只表示模型库存来源得到明确确认，不证明某次 Agent 实际用了该模型。每次加载 manifest 都会重新探测当前宿主，并重新读取、哈希、规范化原始模型库存；清单超过 24 小时、源文件缺失/变化、字段篡改或当前 executable/version 不一致都会阻塞。v3 Task/Preflight 不接受 `--available-model` 手工覆盖来冒充验证；缺少有效 manifest 时只生成 provider/model 未解析的阻塞草稿。L4 还需要符合 [execution receipt 模板](assets/platforms/common/execution-receipt.template.json) 的本地执行声明，且 provider/model/reasoning/runtime 必须与已验证清单精确一致。它仍不是第三方或密码学执行证明。
-
-Codex v2 项目的 Luna/Terra/Sol 路由仍保持兼容；v3 不把它们当作其他平台的通用型号。
-
-## v2 项目迁移
-
-旧项目无需迁移也可继续使用。需要把控制状态复制到平台中立目录时：
+根据生成的 `plan.json` 逐个派发分片；`review contract` 会输出该分片的固定目标、pinned objects、风险、预算、信任策略、建议角色与只读边界。每个分片必须通过 `task --review-shard` 建立标准 Task Package、补齐具体字段并由 `preflight --record-ready` 生成调度回执，才能回收结构化 JSON：
 
 ```bash
-python3 "$SPO/scripts/orchestrator.py" migrate /path/to/old-project
-python3 "$SPO/scripts/orchestrator.py" migrate /path/to/old-project --apply
+python3 "$SPO/scripts/orchestrator.py" review ingest /path/to/project \
+  SHARD-0001 /path/to/SHARD-0001-result.json
+python3 "$SPO/scripts/orchestrator.py" review merge /path/to/project
 ```
 
-默认复制 orchestration 和 runs；`--include-evolution` 只有在 `.dingxinglizi/evolution/` 已被 Git 忽略时才允许。迁移拒绝符号链接和异常硬链接，限制文件数量/总大小，逐文件验证 SHA-256，写入 migration manifest，并保留原 `.codex` 数据。该操作只迁移目录和原有控制事实，不把模型策略 `1.2.0` 自动升级成 `2.0.0`，也不会自动获得跨供应商模型路由。详细回滚规则见 [migration.md](references/migration.md)。
+最终 QA 不是一条可以跳过治理流程的记录命令：先从 `CODE_REVIEW` 进入 `READY_FOR_QA`，重新路由只启用 `qa`，创建并预检 `TASK-LARGE-REVIEW-FINAL-QA`，由独立会话完成后再用 `--task-id`、QA 证据和逐项最终目标验证 JSON 登记。验证集合必须包含所有 P0/P1，以及所有进入过授权 repair plan 的发现（含 P2/P3），防止后续同文件修复让早期复审静默过期；项目进入 `QA_PASS` 后才可 `finalize`。
 
-## MCP 与自动能力准备
+修复模式必须在预览和开始时显式使用 `--mode review_and_fix --authorize-fix`。每轮 `record-repair` 与 `record-rereview` 都必须先用 `review repair-contract` 查看约束，再通过 `task --repair-plan` 建立、预检并完成各自的 Task Package。修复 Worker 由 `engineering_lead` 复审；最终发布 QA 仍是后续独立的 `qa`。不要手工编造产物哈希；完整命令和 JSON 约定见 [USAGE.md](USAGE.md)。
 
-MCP 不是核心依赖。Agent 只能声明所需能力，由 Orchestrator 集中解析。固定 commit、允许仓库、匹配哈希、允许许可证、无可执行代码的 Skill 候选可被安全准备到当前平台的项目 Skill 目录；但磁盘存在不等于宿主已发现。
+## 如何发挥最大能力
 
-自动写入 MCP 配置目前只对 Codex 的受管、无凭据、只读 HTTPS MCP 开放。Cursor、Claude Code、OpenCode 必须走各自宿主支持的配置/授权流程，再把运行时发现证据写回清单。未知社区代码、OAuth、密钥、写权限、数据库和部署能力保持阻塞。
+不要手工指定“开 8 个 Agent”。给 Skill 高价值事实：目标、仓库/目标版本、权威文档、范围与不做事项、风险面、测试命令、期望证据和真实授权边界。推荐提示词：
+
+```text
+$software-project-orchestrator
+对这个仓库做 Complex 级 review_only 审查。固定当前 commit；盘点声明范围和全部排除项；按模块及 API/数据/权限/状态/迁移/安全风险切分有预算的分片；每个分片使用新会话和紧凑交接；不要修改业务源码；最后只在证据满足时给出 COMPLETE_FOR_DECLARED_SCOPE，并列出未解决发现、阻塞项和下一步授权。
+```
+
+更多 0→1、老系统迭代、审查修复和额度模式提示词见 [最大能力使用指南](references/max-capability-guide.md) 与 [完整使用手册](USAGE.md)。
+
+## 模型与平台边界
+
+Skill 按 Task Package 表达 `ECONOMY / STANDARD / ADVANCED / EXPERT / EXCEPTIONAL` 和 reasoning effort。具体 provider/model 必须来自当前宿主的已验证 runtime manifest，不把 Luna/Terra/Sol 或任何厂商型号永久绑定到角色。上下文超限先拆包；架构、安全、权限、迁移、并发和高影响审查才提高能力档。
+
+Codex v2 项目的 Luna/Terra/Sol 路由继续兼容；它们不被当作 Cursor、Claude Code 或 OpenCode 的通用模型名。跨平台支持表示“流程和适配器可用”，不表示四个平台拥有相同模型、Agent 生命周期、MCP 或执行证明能力。支持等级和 manifest 用法见 [平台适配](references/platform-adapters.md)。
 
 ## 验证
 
@@ -185,23 +171,21 @@ python3 -m py_compile scripts/*.py
 python3 -m unittest discover -s scripts/tests -v
 python3 scripts/orchestrator.py eval
 python3 scripts/orchestrator.py doctor
-python3 scripts/orchestrator.py platform doctor --platform codex --scope user
+python3 scripts/check_release_consistency.py
 ```
 
-完整命令见 [USAGE.md](USAGE.md)，设计合同见 [SKILL.md](SKILL.md) 和 [references/](references/)，安全边界见 [SECURITY.md](SECURITY.md)。
+离线评测验证确定性控制规则，不衡量模型智能、业务真伪、产品市场匹配或零缺陷。大型审查还必须检查目标指纹、声明范围、分片覆盖、排除项、风险透镜、会话证明和独立 QA 证据。
 
 ## 诚实边界
 
-本地 CLI 能生成计划、策略、配置、Task Package、ledger、恢复决策、验证结果和待审查改进候选；它不能凭空登录平台、读取剩余额度、保证宿主已加载 Skill/MCP、恢复已消失的 Agent 会话、证明业务事实正确，或替用户完成生产发布和不可逆操作。公开发布、生产写入、购买、外部消息、敏感数据、凭据和破坏性迁移仍需单独授权。
+本地 CLI 能生成计划、策略、配置、Task Package、ledger、仓库清单、审查分片、覆盖报告、恢复判断、验证结果和待审查改进候选；它不能凭空登录平台、读取剩余额度、保证宿主已加载 Skill/MCP、证明真实 token 使用、恢复已消失的 Agent 会话、自动理解全部业务语义、保证发现所有缺陷，或替用户完成生产发布和不可逆操作。
 
-## License
-
-MIT。欢迎提交 issue 和 pull request；修改路由、迁移、权限、适配器或恢复策略时，请同时更新测试和离线评测。
+公开发布、生产写入、购买、外部消息、敏感数据、凭据和破坏性迁移仍需单独授权。MIT License。
 
 ---
 
 ## English
 
-`dingxinglizi` v3 is a portable, on-demand, resumable, evidence-based multi-agent software delivery Skill for Codex, Cursor, Claude Code, and OpenCode. It separates portable project truth and control state from host-native Agent profiles, routes each Task Package through abstract capability tiers resolved against an explicitly verified runtime inventory, preserves v2 Codex projects, and requires independent QA before completion.
+`dingxinglizi` v3.1.0 is a portable, on-demand, resumable, and evidence-based multi-agent software delivery Skill for Codex, Cursor, Claude Code, and OpenCode. Its new large-repository review engine pins a target, inventories declared scope and exclusions, creates budgeted module/risk shards, validates structured results, merges findings deterministically, and optionally governs bounded repair plus independent re-review and QA.
 
-The four adapters are contract-tested. OpenCode V1 and V2 use separate version-aware renderers and unknown major versions fail closed. Compatibility is reported as L0–L4, and a rendered profile is never presented as proof that a native session launched or used a specific model. See [USAGE.md](USAGE.md) for installation, initialization, runtime evidence, migration, and platform-specific limits.
+The strongest `review_only` conclusion is `COMPLETE_FOR_DECLARED_SCOPE`; repair mode uses a distinct claim that separates initial full-target coverage from the repaired worktree. Neither means “zero defects” or “full semantic understanding.” Context/token values are estimates, generated host profiles are not proof of native execution, and cross-platform support does not imply identical models or runtime capabilities. See [USAGE.md](USAGE.md) and the [large review example](examples/large-repository-review/README.md).
