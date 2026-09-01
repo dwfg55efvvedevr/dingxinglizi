@@ -15,6 +15,7 @@ from check_project_status import check as check_project_status
 from check_traceability import check as check_traceability
 from create_task_package import create as create_task
 from dispatch_receipt import record_dispatch_receipt
+from dependency_check import dependency_report, print_human as print_dependencies_human
 from doctor import diagnose, print_human
 from domain_packs import apply_pack, list_packs, load_pack
 from evaluate_routing import evaluate, evaluate_bundled
@@ -47,6 +48,9 @@ from platform_runtime import (
 )
 from resolve_capabilities import resolve as resolve_capabilities
 from route_roles import route_project
+from task_mode import TASK_MODES, classify_task_mode
+from iteration_state import STATES as ITERATION_STATES, transition_iteration
+from wait_budget import wait_decision
 from run_state import checkpoint as record_checkpoint
 from run_state import create_run, report as create_report, resume as resume_run
 from validate_documents import check as validate_documents
@@ -60,6 +64,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("version", help="Print the Skill product version")
+
+    dependencies_parser = sub.add_parser("dependencies", help="Report required, optional-feature, and development-only dependencies")
+    dependencies_parser.add_argument("--json", action="store_true")
 
     doctor_parser = sub.add_parser("doctor", help="Diagnose the Skill and an optional initialized project")
     doctor_parser.add_argument("project_dir", nargs="?")
@@ -88,6 +95,43 @@ def build_parser() -> argparse.ArgumentParser:
     plan_parser.add_argument("--completed-role", action="append", default=[])
     plan_parser.add_argument("--completed-task", action="append", default=[])
     plan_parser.add_argument("--write", action="store_true")
+    plan_parser.add_argument("--task-mode", choices=TASK_MODES)
+
+    triage_parser = sub.add_parser("triage", help="Choose task governance before loading the project lifecycle")
+    triage_parser.add_argument("--project-complexity", choices=["Simple", "Standard", "Complex"], required=True)
+    triage_parser.add_argument("--signal", action="append", default=[])
+    triage_parser.add_argument("--requested-mode", choices=TASK_MODES)
+    triage_parser.add_argument("--estimated-business-files", type=int, default=1)
+    triage_parser.add_argument("--estimated-minutes", type=int)
+    triage_parser.add_argument("--explicit-skill", action="store_true")
+    triage_parser.add_argument("--full-process", action="store_true")
+
+    wait_parser = sub.add_parser("wait-budget", help="Decide whether another wait is allowed or takeover is required")
+    wait_parser.add_argument("--task-mode", choices=TASK_MODES, required=True)
+    wait_parser.add_argument("--no-progress-cycles", type=int, required=True)
+    wait_parser.add_argument("--elapsed-minutes", type=int, default=0)
+
+    iteration_parser = sub.add_parser("iteration-transition", help="Advance a bounded delta without changing project state")
+    iteration_parser.add_argument("--current", choices=ITERATION_STATES, required=True)
+    iteration_parser.add_argument("--target", choices=ITERATION_STATES, required=True)
+    iteration_parser.add_argument("--repair-rounds", type=int, default=0)
+    iteration_parser.add_argument("--engineering-session", default="")
+    iteration_parser.add_argument("--qa-session", default="")
+    iteration_parser.add_argument("--qa-conclusion", default="")
+    iteration_parser.add_argument("--qa-evidence", action="append", default=[])
+    iteration_parser.add_argument("--unaccepted-p0-p1", type=int, default=0)
+
+    quick_parser = sub.add_parser("quick", help="Preview a no-subagent local patch receipt without initializing governance")
+    quick_parser.add_argument("project_dir")
+    quick_parser.add_argument("--goal", required=True)
+    quick_parser.add_argument("--target", action="append", required=True)
+    quick_parser.add_argument("--verify", action="append", required=True)
+
+    change_parser = sub.add_parser("change", help="Preview a Compact Delta Contract for a bounded change")
+    change_parser.add_argument("project_dir")
+    change_parser.add_argument("--goal", required=True)
+    change_parser.add_argument("--surface", action="append", required=True)
+    change_parser.add_argument("--verify", action="append", default=[])
 
     run_parser = sub.add_parser("run", help="Create a local run ledger and produce the next safe action")
     run_parser.add_argument("project_dir")
@@ -249,6 +293,13 @@ def main() -> int:
         if args.command == "version":
             print(version())
             return 0
+        if args.command == "dependencies":
+            result = dependency_report()
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+            else:
+                print_dependencies_human(result)
+            return 0 if result["runtime_ready"] else 3
         if args.command == "doctor":
             root = project_root(args.project_dir) if args.project_dir else None
             result = diagnose(root)
@@ -321,11 +372,80 @@ def main() -> int:
             print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
         if args.command == "plan":
+            plan_signals = list(args.signal)
+            if args.task_mode:
+                plan_signals.append(args.task_mode.lower())
             result = route_project(
-                project_root(args.project_dir), stage=args.stage, quota=args.quota, signals=args.signal,
+                project_root(args.project_dir), stage=args.stage, quota=args.quota, signals=plan_signals,
                 completed_roles=args.completed_role, completed_tasks=args.completed_task, write=args.write,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        if args.command == "triage":
+            triage_signals = list(args.signal)
+            if args.explicit_skill:
+                triage_signals.append("explicit_skill_invocation")
+            if args.full_process:
+                triage_signals.append("full_process_requested")
+            print(json.dumps(classify_task_mode(
+                project_complexity=args.project_complexity,
+                signals=triage_signals,
+                requested_mode=args.requested_mode,
+                estimated_business_files=args.estimated_business_files,
+                estimated_minutes=args.estimated_minutes,
+            ), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        if args.command == "wait-budget":
+            print(json.dumps(wait_decision(
+                task_mode=args.task_mode,
+                consecutive_no_progress=args.no_progress_cycles,
+                elapsed_minutes=args.elapsed_minutes,
+            ), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        if args.command == "iteration-transition":
+            print(json.dumps(transition_iteration(
+                args.current, args.target, repair_rounds=args.repair_rounds,
+                engineering_session=args.engineering_session, qa_session=args.qa_session,
+                qa_conclusion=args.qa_conclusion, qa_evidence=args.qa_evidence,
+                unaccepted_p0_p1=args.unaccepted_p0_p1,
+            ), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        if args.command in {"quick", "change"}:
+            local_root = Path(args.project_dir).expanduser().resolve()
+            if not local_root.is_dir():
+                raise ValueError(f"project directory does not exist: {local_root}")
+            if args.command == "quick":
+                payload = {
+                    "status": "PREVIEW", "writes_performed": False,
+                    "task_mode": "QUICK_PATCH", "project_root": str(local_root),
+                    "goal": args.goal, "target_scope": args.target,
+                    "verification": args.verify, "owner": "main_session",
+                    "subagents": 0, "max_active_subagents": 0,
+                    "max_total_role_sessions": 1,
+                    "time_expectation": {"min": 3, "max": 15},
+                    "next_action": "implement-narrowly-then-run-targeted-verification",
+                }
+            else:
+                payload = {
+                    "status": "PREVIEW", "writes_performed": False,
+                    "task_mode": "BOUNDED_CHANGE", "project_root": str(local_root),
+                    "compact_delta_contract": {
+                        "current_problem": args.goal,
+                        "allowed_scope": args.surface,
+                        "preserved_business_rules": ["record-before-implementation"],
+                        "acceptance_criteria": args.verify or ["BLOCKING_UNKNOWN: add 3-8 observable criteria"],
+                        "targeted_tests": args.verify or ["BLOCKING_UNKNOWN: add targeted validation"],
+                        "risks_and_rollback": ["record-before-implementation"],
+                    },
+                    "workflow": [
+                        "single_engineering_lead", "targeted_validation", "independent_qa",
+                        "at_most_one_targeted_repair",
+                    ],
+                    "max_active_subagents": 1, "max_total_role_sessions": 2,
+                    "time_expectation": {"min": 15, "max": 45},
+                    "next_action": "complete-contract-then-dispatch-one-engineering-owner",
+                }
+            print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
             return 0
         if args.command == "run":
             print(json.dumps(create_run(project_root(args.project_dir)), ensure_ascii=False, indent=2))
@@ -425,6 +545,9 @@ def main() -> int:
                     apply=args.apply, update=args.update,
                     opencode_schema=args.opencode_schema,
                 )
+                dependencies = dependency_report()
+                result["dependency_status"] = dependencies["status"]
+                result["dependency_notices"] = dependencies["notices"]
                 print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
                 return 3 if result["status"] == "BLOCKED_CONFLICT" else 0
             if args.platform_command == "doctor":

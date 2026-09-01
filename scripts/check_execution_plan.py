@@ -22,17 +22,20 @@ from model_routing import (
 from platform_runtime import load_runtime_manifest
 from project_layout import control_path
 from role_routing import POLICY_VERSION as ROLE_POLICY_VERSION, role_plan_fingerprint, validate_role_policy
+from route_task import apply_user_model_override
 from route_roles import source_fingerprint
 from resolve_capabilities import installed_skill, load_json, mcp_config_details, runtime_capabilities
 from task_contract import boolean_scalar, integer_scalar, list_field, quoted_scalar, top_section, validate_task_contract
+from task_mode import GOVERNED_TRIGGERS, governance_severity
 
 
-def check(root: Path, task_path: Path, available_models: list[str] | None = None) -> list[str]:
+def _check_raw(root: Path, task_path: Path, available_models: list[str] | None = None) -> list[str]:
     text = read_text(task_path)
     risk = top_section(text, "risk_profile")
     role_execution = top_section(text, "role_execution")
     execution = top_section(text, "execution_profile")
     capabilities = top_section(text, "capability_requirements")
+    model_override = top_section(text, "model_override")
     status = load_json(root / "docs/project-status.json")
     model_policy = load_json(control_path(root, "orchestration/model-routing-policy.json"))
     validate_model_policy(model_policy)
@@ -84,6 +87,22 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
             availability_source=availability_source,
             availability_verified=availability_verified,
         )
+    requested_model = quoted_scalar(model_override, "requested_model") if model_override else ""
+    override_approved = bool(model_override) and quoted_scalar(model_override, "approval_status") == "APPROVED"
+    if requested_model:
+        expected = apply_user_model_override(
+            expected,
+            requested_model=requested_model,
+            requested_reasoning=quoted_scalar(model_override, "requested_reasoning") or None,
+            approved=override_approved,
+            available_models=expected.get("available_models", []),
+            actual_launch={
+                "attested": boolean_scalar(execution, "actual_model_attested"),
+                "model": quoted_scalar(execution, "selected_model"),
+                "reasoning_effort": quoted_scalar(execution, "model_reasoning_effort"),
+                "evidence": quoted_scalar(model_override, "launch_evidence"),
+            },
+        )
     errors: list[str] = []
     if override_error:
         errors.append(
@@ -98,7 +117,9 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
         stored_fingerprint = role_plan.get("plan_fingerprint")
         if stored_fingerprint != role_plan_fingerprint(role_plan):
             errors.append("ROLE_ROUTE_MISMATCH: persisted role plan fingerprint is invalid")
-        if quoted_scalar(role_execution, "policy_version") != ROLE_POLICY_VERSION:
+        task_role_policy = quoted_scalar(role_execution, "policy_version")
+        plan_role_policy = str(role_plan.get("policy_version", ""))
+        if task_role_policy not in {ROLE_POLICY_VERSION, "1.2.0"} or task_role_policy != plan_role_policy:
             errors.append("ROLE_ROUTE_MISMATCH: Task Package role policy version is stale")
         if quoted_scalar(role_execution, "role_plan_fingerprint") != stored_fingerprint:
             errors.append("ROLE_ROUTE_MISMATCH: Task Package does not reference the current role plan")
@@ -267,6 +288,43 @@ def check(root: Path, task_path: Path, available_models: list[str] | None = None
     return errors
 
 
+def check_detailed(
+    root: Path, task_path: Path, available_models: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Return safety blockers separately from tolerable governance degradation."""
+    raw = _check_raw(root, task_path, available_models)
+    text = read_text(task_path)
+    risk = top_section(text, "risk_profile")
+    role_plan = load_json(control_path(root, "orchestration/role-plan.json"))
+    task_mode = str(role_plan.get("task_mode") or role_plan.get("task_complexity") or "GOVERNED_DELIVERY")
+    risk_flags = list_field(risk, "flags")
+    blockers: list[str] = []
+    degraded: list[str] = []
+    for issue in raw:
+        # Bounded overlays intentionally do not require the global lifecycle gate to move.
+        high_risk = task_mode == "GOVERNED_DELIVERY" or bool(set(risk_flags) & GOVERNED_TRIGGERS)
+        overlay_issue = not high_risk and task_mode in {"QUICK_PATCH", "BOUNDED_CHANGE"} and issue.startswith((
+            "BLOCKED_STAGE:", "STALE_ROLE_PLAN:", "STALE_TASK_INPUT:", "STALE_QUALITY_APPROVAL:",
+        ))
+        severity = (
+            "GOVERNANCE_METADATA_DEGRADED"
+            if overlay_issue
+            else governance_severity(issue, task_mode=task_mode, risk_flags=risk_flags)
+        )
+        if severity == "GOVERNANCE_METADATA_DEGRADED":
+            degraded.append(f"GOVERNANCE_METADATA_DEGRADED: {issue}")
+        else:
+            # Keep the stable check() API/messages for v3.1 callers. The separate
+            # blockers/degraded tuple is the executable severity classification.
+            blockers.append(issue)
+    return blockers, degraded
+
+
+def check(root: Path, task_path: Path, available_models: list[str] | None = None) -> list[str]:
+    blockers, _ = check_detailed(root, task_path, available_models)
+    return blockers
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project_dir")
@@ -282,7 +340,7 @@ def main() -> int:
         task_path = Path(args.task_package)
         if not task_path.is_absolute():
             task_path = root / task_path
-        errors = check(root, task_path, args.available_models)
+        errors, degraded = check_detailed(root, task_path, args.available_models)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -291,6 +349,8 @@ def main() -> int:
             print(f"ERROR: {error}")
         print(f"BLOCKED: {len(errors)} execution preflight error(s)")
         return 3
+    for warning in degraded:
+        print(f"WARNING: {warning}")
     if args.record_ready:
         try:
             receipt = record_dispatch_receipt(root, read_text(task_path))

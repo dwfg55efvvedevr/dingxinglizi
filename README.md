@@ -1,6 +1,6 @@
 # dingxinglizi
 
-> Software Project Orchestrator v3.1.0 — 可移植、按需调度、可恢复、可审查的多 Agent 软件交付 Skill
+> Software Project Orchestrator v3.2.2 — 任务定尺、依赖透明、按需调度、可恢复、可审查的多 Agent 软件交付 Skill
 
 [![CI](https://github.com/lizi-product-studio/dingxinglizi/actions/workflows/ci.yml/badge.svg)](https://github.com/lizi-product-studio/dingxinglizi/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/lizi-product-studio/dingxinglizi)](https://github.com/lizi-product-studio/dingxinglizi/releases)
@@ -12,7 +12,33 @@
 $software-project-orchestrator
 ```
 
-它适合新系统 0→1、老系统跨模块迭代，以及大型/复杂仓库的分片审查与有界修复。Simple、Standard、Complex 都按当前阶段只启用最少必要角色，不会为了显得“多 Agent”而一次拉满团队。
+它适合从小修复到新系统 0→1、老系统跨模块迭代，以及大型/复杂仓库的分片审查与有界修复。v3.2 把“项目有多复杂”和“当前任务有多复杂”彻底分开：Complex 项目里的小任务不会再被放大成重大项目流程。
+
+## v3.2 新增：先给任务定尺，再决定流程
+
+即使用户显式调用 `$software-project-orchestrator` 或要求“走全流程”，也必须先选择最小充分模式。用户另行明确指定更高的 `requested_mode` 时可以主动加严，但不能降低风险计算得到的安全下限：
+
+| 当前任务模式 | 适用情况 | 默认角色与验证 |
+|---|---|---|
+| `QUICK_PATCH` | 文案、样式、局部配置、孤立低风险 bug | 主线程，0 子 Agent；用户可见产物 + 定向检查 |
+| `BOUNDED_CHANGE` | 边界明确、可逆的多文件或前端/API 迭代 | Compact Delta → Engineering → 定向验证 → 独立 QA；最多一轮返修 |
+| `GOVERNED_DELIVERY` | 新/重大模块，支付、权限、隐私、迁移、并发、不可逆数据或生产动作 | 按风险启用完整门禁与独立 QA |
+
+例如，Complex 拼团平台里的“后台自提点地图定位 + API 失败关闭，无迁移”是 `BOUNDED_CHANGE`，不会重走 Requirements → QG → 全局生命周期。只有当前任务本身出现真实高风险信号才升级。Quality Governor 也改为风险触发；单纯措辞精度不再阻断研发。
+
+首条执行说明会给出模式、范围、Agent 数、预计时间和验证计划。Quick 默认 3–15 分钟、0 子 Agent；Bounded 默认 15–45 分钟、最多 1 个并发子 Agent和 2 个顺序专业会话。连续等待无进展会触发 `TAKEOVER_OR_REPLAN`，而不是无限等。
+
+```bash
+python3 scripts/orchestrator.py quick /path/to/project \
+  --goal "删除首页说明文案" --target frontend/src/pages/index.vue \
+  --verify "targeted frontend test"
+
+python3 scripts/orchestrator.py change /path/to/project \
+  --goal "优化后台自提点地图定位并让 API 失败关闭" \
+  --surface admin --surface api
+```
+
+详见 [任务模式路由](references/task-mode-routing.md) 与 [v3.2 使用示例](examples/task-mode-routing/README.md)。
 
 ## v3.1 新增：大型仓库审查引擎
 
@@ -70,12 +96,13 @@ $software-project-orchestrator
 
 ## 安装
 
-需要 Python 3.9+；运行时核心只使用标准库。
+需要 Python 3.9+；运行时核心只使用标准库，不需要 PyYAML 或其他第三方 Python 包。PyYAML 只用于 OpenAI `skill-creator` 自带的可选开发校验器 `quick_validate.py`，缺少它不会影响本 Skill 运行。
 
 ```bash
 git clone https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
 cd /tmp/dingxinglizi
 python3 scripts/orchestrator.py platform detect
+python3 scripts/orchestrator.py dependencies
 ```
 
 先预览，再只安装一个平台：
@@ -86,6 +113,8 @@ python3 scripts/orchestrator.py platform install --platform codex --scope user -
 ```
 
 把 `codex` 换成 `cursor`、`claude-code` 或 `opencode`。OpenCode 离线或版本无法验证时必须增加 `--opencode-schema v1` 或 `v2`。已有不同文件默认不覆盖，只有明确增加 `--update` 才更新。安装器不联网、不登录、不读凭据、不调用包管理器。
+
+`dependencies` 会分别报告运行必需项、Git/宿主 CLI 等可选功能项，以及 PyYAML 这类开发校验项。缺少可选项时会明确说明受影响功能和处理方法，不会把可选依赖伪装成运行阻塞。完整说明见 [依赖与能力限制](references/dependencies.md)。
 
 | 平台 | User Skill | User Agents | Project Skill | Project Agents |
 |---|---|---|---|---|
@@ -186,6 +215,6 @@ python3 scripts/check_release_consistency.py
 
 ## English
 
-`dingxinglizi` v3.1.0 is a portable, on-demand, resumable, and evidence-based multi-agent software delivery Skill for Codex, Cursor, Claude Code, and OpenCode. Its new large-repository review engine pins a target, inventories declared scope and exclusions, creates budgeted module/risk shards, validates structured results, merges findings deterministically, and optionally governs bounded repair plus independent re-review and QA.
+`dingxinglizi` v3.2.2 is a task-sized, dependency-transparent, portable, on-demand, resumable, and evidence-based multi-agent software delivery Skill for Codex, Cursor, Claude Code, and OpenCode. Its runtime requires Python 3.9+ and no third-party Python packages; PyYAML is used only by OpenAI skill-creator's optional external validator. It separates project complexity from current task mode so Quick and Bounded changes do not inherit a heavy lifecycle, while an explicit higher `requested_mode` remains available when the user intentionally wants stricter governance. Its large-repository review engine pins a target, inventories declared scope and exclusions, creates budgeted module/risk shards, validates structured results, merges findings deterministically, and optionally governs bounded repair plus independent re-review and QA.
 
 The strongest `review_only` conclusion is `COMPLETE_FOR_DECLARED_SCOPE`; repair mode uses a distinct claim that separates initial full-target coverage from the repaired worktree. Neither means “zero defects” or “full semantic understanding.” Context/token values are estimates, generated host profiles are not proof of native execution, and cross-platform support does not imply identical models or runtime capabilities. See [USAGE.md](USAGE.md) and the [large review example](examples/large-repository-review/README.md).

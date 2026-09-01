@@ -63,7 +63,7 @@ class ProjectLayoutV3Tests(unittest.TestCase):
                 self.addCleanup(temp.cleanup)
                 template = (root / "tasks/TASK.template.yaml").read_text(encoding="utf-8")
                 role_section, execution_section = template.split("execution_profile:", 1)
-                self.assertIn('role_execution:\n  policy_version: "1.2.0"', role_section)
+                self.assertIn('role_execution:\n  policy_version: "1.3.0"', role_section)
                 self.assertIn(f'  policy_version: "{expected}"', execution_section)
                 self.assertNotIn("{{MODEL_POLICY_VERSION}}", template)
 

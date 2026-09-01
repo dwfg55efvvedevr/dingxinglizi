@@ -10,6 +10,8 @@ from pathlib import Path
 
 
 REQUIRED_REFERENCES = (
+    "references/dependencies.md",
+    "references/task-mode-routing.md",
     "references/large-repository-review.md",
     "references/context-hygiene.md",
     "references/review-and-repair.md",

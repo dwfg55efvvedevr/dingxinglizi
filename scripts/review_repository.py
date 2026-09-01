@@ -7,8 +7,10 @@ import hashlib
 import json
 import os
 import re
+import select
 import stat
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -196,6 +198,134 @@ def _git_blob_prefix(root: Path, target: str, path: str) -> bytes:
     )
 
 
+class _GitBlobBatchReader:
+    """Read pinned blobs through one bounded ``git cat-file --batch`` process.
+
+    Object ids come from ``ls-tree`` and are revalidated before being written to
+    the protocol.  Blob bytes are consumed exactly, so paths never enter a Git
+    revision expression and repositories pay one process launch rather than one
+    launch per classifiable file.
+    """
+
+    def __init__(self, root: Path, *, timeout: int = DEFAULT_COMMAND_TIMEOUT) -> None:
+        self.root = root.resolve()
+        self.timeout = timeout
+        self.process: subprocess.Popen[bytes] | None = None
+        self.failure: str | None = None
+
+    def __enter__(self) -> "_GitBlobBatchReader":
+        self.process = subprocess.Popen(
+            ["git", "-C", str(self.root), "cat-file", "--batch"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            bufsize=0,
+        )
+        return self
+
+    def _read_ready(self, size: int, deadline: float) -> bytes:
+        if not self.process or not self.process.stdout:
+            raise ValueError("Git blob batch process is not available")
+        chunks: list[bytes] = []
+        remaining = size
+        descriptor = self.process.stdout.fileno()
+        while remaining:
+            wait = deadline - time.monotonic()
+            if wait <= 0:
+                raise ValueError(f"Git blob batch read timed out after {self.timeout}s")
+            readable, _, _ = select.select([descriptor], [], [], wait)
+            if not readable:
+                raise ValueError(f"Git blob batch read timed out after {self.timeout}s")
+            chunk = os.read(descriptor, remaining)
+            if not chunk:
+                raise ValueError("Git blob batch process ended before returning the object")
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def _readline(self, deadline: float, *, limit: int = 4096) -> bytes:
+        value = bytearray()
+        while len(value) < limit:
+            byte = self._read_ready(1, deadline)
+            value.extend(byte)
+            if byte == b"\n":
+                return bytes(value)
+        raise ValueError("Git blob batch returned an oversized protocol header")
+
+    def read(self, object_id: str, expected_size: int) -> bytes:
+        if self.failure:
+            raise ValueError(f"Git blob batch is unavailable after an earlier failure: {self.failure}")
+        try:
+            return self._read(object_id, expected_size)
+        except (OSError, UnicodeError, ValueError) as exc:
+            # Treat a protocol/read failure as process-wide. Continuing to send
+            # requests after framing is uncertain can misassociate blob content
+            # with paths, so later files fail immediately and explicitly.
+            self.failure = str(exc)
+            raise
+
+    def _read(self, object_id: str, expected_size: int) -> bytes:
+        if not COMMIT_PATTERN.fullmatch(object_id):
+            raise ValueError(f"Invalid Git object id in tree inventory: {object_id!r}")
+        if expected_size < 0 or expected_size > MAX_CLASSIFY_BYTES:
+            raise ValueError("Git blob classification size is outside the allowed limit")
+        if not self.process or not self.process.stdin:
+            raise ValueError("Git blob batch process is not available")
+        deadline = time.monotonic() + self.timeout
+        try:
+            self.process.stdin.write(object_id.encode("ascii") + b"\n")
+            self.process.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            raise ValueError("Git blob batch process rejected the object request") from exc
+        header = self._readline(deadline).rstrip(b"\n")
+        fields = header.split(b" ")
+        if len(fields) == 2 and fields[1] == b"missing":
+            raise ValueError(f"Git object disappeared during inventory: {object_id}")
+        if len(fields) != 3:
+            raise ValueError("Git blob batch returned an invalid protocol header")
+        returned_id, object_type, size_bytes = fields
+        try:
+            returned_size = int(size_bytes)
+        except ValueError as exc:
+            raise ValueError("Git blob batch returned an invalid object size") from exc
+        if returned_id.decode("ascii", errors="strict") != object_id or object_type != b"blob":
+            raise ValueError("Git blob batch returned an unexpected object")
+        if returned_size != expected_size or returned_size > MAX_CLASSIFY_BYTES:
+            raise ValueError(
+                f"Git blob size changed during inventory ({returned_size} != {expected_size})"
+            )
+        content = self._read_ready(returned_size, deadline)
+        if self._read_ready(1, deadline) != b"\n":
+            raise ValueError("Git blob batch returned an invalid object terminator")
+        return content
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        if not self.process:
+            return
+        if self.process.stdin:
+            try:
+                self.process.stdin.close()
+            except OSError:
+                pass
+        try:
+            self.process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+        stderr = b""
+        if self.process.stderr:
+            stderr = self.process.stderr.read(MAX_COMMAND_OUTPUT + 1)
+            self.process.stderr.close()
+        if self.process.stdout:
+            self.process.stdout.close()
+        if len(stderr) > MAX_COMMAND_OUTPUT and exc_type is None:
+            raise ValueError("Git blob batch exceeded the stderr output limit")
+        if self.process.returncode != 0 and exc_type is None:
+            detail = stderr.decode("utf-8", errors="replace").strip()[:2000]
+            raise ValueError(f"Git blob batch failed ({self.process.returncode}): {detail}")
+
+
 def _path_disposition(path: str, mode: str, object_type: str) -> tuple[str, list[str]]:
     parts = Path(path).parts
     lowered = {part.lower() for part in parts[:-1]}
@@ -218,18 +348,9 @@ def _path_disposition(path: str, mode: str, object_type: str) -> tuple[str, list
     return "INCLUDED", ["tracked-source-candidate"]
 
 
-def _classify_blob(root: Path, target: str, entry: dict[str, Any]) -> None:
+def _classify_blob_content(entry: dict[str, Any], content: bytes) -> None:
+    """Apply content-derived classification to an already bounded blob."""
     if entry["disposition"] != "INCLUDED":
-        return
-    size = int(entry.get("size") or 0)
-    if size > MAX_CLASSIFY_BYTES:
-        entry["classification_notes"].append("content-classification-skipped:size-limit")
-        return
-    try:
-        content = _git_blob_prefix(root, target, entry["path"])
-    except ValueError as exc:
-        entry["disposition"] = "BLOCKED_UNCLASSIFIED"
-        entry["classification_notes"].append(f"content-read-failed:{exc}")
         return
     if content.startswith(b"version https://git-lfs.github.com/spec/v1\n"):
         entry["disposition"] = "EXCLUDED_LFS"
@@ -291,12 +412,47 @@ def inventory_git_target(root: Path, snapshot: dict[str, Any]) -> dict[str, Any]
             "disposition": disposition,
             "classification_notes": notes,
         }
-        _classify_blob(root, target, entry)
         entries.append(entry)
         if len(entries) > MAX_TRACKED_FILES:
             raise ValueError(f"Repository exceeds tracked-file limit ({MAX_TRACKED_FILES})")
         if total_bytes > MAX_MANIFEST_BYTES:
             raise ValueError(f"Repository exceeds manifest-byte limit ({MAX_MANIFEST_BYTES})")
+
+    # Classify all bounded source candidates through one persistent Git process.
+    # A failed read is explicit and fail-closed for that file; it is never silently
+    # treated as text. Large files retain the pre-existing deterministic skip.
+    classifiable = [entry for entry in entries if entry["disposition"] == "INCLUDED"]
+    if classifiable and os.name == "nt":
+        # ``select`` cannot wait on anonymous pipes on Windows. Preserve safe,
+        # bounded classification there and make the process-count degradation
+        # observable in every affected inventory entry.
+        for entry in classifiable:
+            size = int(entry.get("size_bytes") or 0)
+            if size > MAX_CLASSIFY_BYTES:
+                entry["classification_notes"].append("content-classification-skipped:size-limit")
+                continue
+            entry["classification_notes"].append("content-read-mode:per-object-platform-fallback")
+            try:
+                content = _git_blob_prefix(root, target, str(entry["path"]))
+            except ValueError as exc:
+                entry["disposition"] = "BLOCKED_UNCLASSIFIED"
+                entry["classification_notes"].append(f"content-read-failed:{exc}")
+                continue
+            _classify_blob_content(entry, content)
+    elif classifiable:
+        with _GitBlobBatchReader(root) as reader:
+            for entry in classifiable:
+                size = int(entry.get("size_bytes") or 0)
+                if size > MAX_CLASSIFY_BYTES:
+                    entry["classification_notes"].append("content-classification-skipped:size-limit")
+                    continue
+                try:
+                    content = reader.read(str(entry["object_id"]), size)
+                except (OSError, UnicodeError, ValueError) as exc:
+                    entry["disposition"] = "BLOCKED_UNCLASSIFIED"
+                    entry["classification_notes"].append(f"batch-content-read-failed:{exc}")
+                    continue
+                _classify_blob_content(entry, content)
     entries.sort(key=lambda item: item["path"])
     disposition_counts: dict[str, int] = {}
     for entry in entries:

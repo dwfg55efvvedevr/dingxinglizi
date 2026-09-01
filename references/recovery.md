@@ -9,6 +9,8 @@ Recovery reconstructs the next safe orchestration action from project files and 
 - `RECONCILIATION_REQUIRED`: project state still lists an active session. Inspect the actual runtime/session, persist any valid handoff, or explicitly close the stale record; do not clear it automatically.
 - `BLOCKED`: required files, valid state, or trustworthy recovery evidence are missing.
 - `DONE`: the run is already terminal; generate/read its report rather than restarting it.
+- `GOVERNANCE_METADATA_DEGRADED`: stale but non-active control metadata exists and the current delta is local, reversible, ownership-safe, and not high risk. Record the degradation and continue through a lightweight patch/change session.
+- `TAKEOVER_OR_REPLAN`: two progress requests produced no useful update and a third wait would exceed the execution budget. The Orchestrator takes over the last bounded work or creates a smaller plan; it does not wait indefinitely.
 
 ## Recovery sequence
 
@@ -20,3 +22,5 @@ Recovery reconstructs the next safe orchestration action from project files and 
 6. After continuation, checkpoint the verified handoff and regenerate the report.
 
 Environment failures do not count as reasoning failures and must not trigger model escalation. If auth, permissions, credentials, a missing tool, or an external system caused interruption, route to the matching pause state in [automation-boundaries.md](automation-boundaries.md).
+
+Classify control-plane problems separately. An active conflicting writer, unsafe permission, missing high-risk authority, or uncertain production action is an `EXECUTION_SAFETY_BLOCKER`. A closed old run, stale role-plan fingerprint, or unverified low-risk model inventory is metadata degradation, not an implementation blocker for a local reversible Quick/Bounded delta. Independent QA requirements remain fail-closed.

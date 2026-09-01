@@ -1,6 +1,24 @@
-# Software Project Orchestrator v3.1.0
+# Software Project Orchestrator v3.2.2
 
-`dingxinglizi` v3.1.0 adds a governed Large Repository Review Engine to the portable `$software-project-orchestrator` workflow. Large codebases no longer need to be handed to one long-lived Agent session: the control plane pins the target, inventories declared scope and exclusions, creates budgeted module/risk shards, validates immutable results, merges findings conservatively, and optionally governs bounded repair with independent re-review and QA.
+`dingxinglizi` v3.2.2 fixes workflow inflation while preserving intentional governance escalation and making dependencies explicit. It classifies the current delta before initialization or delegation as `QUICK_PATCH`, `BOUNDED_CHANGE`, or `GOVERNED_DELIVERY`. Project complexity remains useful context, but no longer forces a local change through the whole project lifecycle. Explicit Skill invocation requests a complete closed loop, not every Agent and gate; a separately explicit higher `requested_mode` is honored, while a lower request cannot bypass the computed safety floor. The portable runtime requires Python 3.9+ and no third-party Python package; a new dependency report explains optional Git/host features and identifies PyYAML as development-only for OpenAI skill-creator's external validator.
+
+## Task-sized delivery
+
+- Quick: main session, zero child Agents, user-visible artifact first, targeted checks, no full control-plane initialization by default.
+- Bounded: Compact Delta Contract, one Engineering Lead, targeted validation, independent QA when required, and at most one focused repair; no default Requirements or Quality Governor.
+- Governed: existing lifecycle and independent QA for payment, permission/data-scope, privacy/security/compliance, migration/irreversible data, concurrency/consistency, production/external actions, major contracts, or conflicting facts.
+- Quality Governor is now triggered by current-task risk. Wording precision that does not change safety, implementation, money, permissions, data writes, or recoverability is a nonblocking note.
+- Execution safety blockers are distinct from stale governance metadata. Low/medium-risk local work may proceed with honest `UNVERIFIED` runtime evidence; high-risk floors remain fail-closed.
+- Policy recommendation, user-approved model override, and actual launch attestation coexist without pretending an override proves launch.
+- Wait and time budgets trigger `TAKEOVER_OR_REPLAN`; scope expansion triggers `SCOPE_CONFIRMATION_REQUIRED`.
+
+Portable time/wait/session counters are caller-reported and labeled as such; native enforcement requires matching host receipts. The iteration-transition command fails closed on independent QA inputs before `DELTA_DONE`, but remains a non-persisting validator rather than a hidden background workflow.
+
+The reference case—pickup-point map configuration plus API fail-closed behavior in a Complex group-buy platform, with no migration or payment/permission change—now routes to Bounded Engineering → QA instead of Requirements/QG lifecycle churn.
+
+## Large Repository Review Engine (retained and faster)
+
+Large codebases no longer need to be handed to one long-lived Agent session: the control plane pins the target, inventories declared scope and exclusions, creates budgeted module/risk shards, validates immutable results, merges findings conservatively, and optionally governs bounded repair with independent re-review and QA. v3.2 indexes planning lookups and reads Git blobs through one validated batch process where supported; the 10,000-file regression completes planning in well under a second on the release machine.
 
 ## Highlights
 
@@ -32,7 +50,7 @@ It means the current declared inventory was assigned, required primary and cross
 ## Quick start
 
 ```bash
-git clone --branch v3.1.0 https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
+git clone --branch v3.2.2 https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
 cd /tmp/dingxinglizi
 python3 scripts/orchestrator.py platform detect
 python3 scripts/orchestrator.py platform install --platform codex --scope user

@@ -154,6 +154,10 @@ def build_review_plan(
     if not entries:
         return _blocked_empty_plan(inventory, selected_budget)
     modules = list(inventory.get("modules", []))
+    # Keep an immutable-size lookup for cross-cut shard construction.  The old
+    # implementation scanned ``entries`` once for every risk-bearing path,
+    # making a plan with one broad risk lens quadratic in repository size.
+    entry_by_path = {str(entry["path"]): entry for entry in entries}
     oversized: list[dict[str, Any]] = []
     for entry in entries:
         size = int(entry.get("size_bytes", 0))
@@ -225,7 +229,7 @@ def build_review_plan(
         current_tokens = 0
         part = 1
         for path in values:
-            entry = next(item for item in entries if item["path"] == path)
+            entry = entry_by_path[path]
             size = int(entry["size_bytes"])
             tokens = estimate_tokens(size)
             if current and (

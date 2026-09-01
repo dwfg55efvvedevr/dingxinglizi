@@ -13,6 +13,7 @@ from typing import Any
 from _common import CANONICAL_STATES, INTERRUPT_STATES, REQUIRED_AGENTS, REQUIRED_DOCS, SKILL_ROOT, project_root
 from _common import parse_frontmatter
 from domain_packs import list_packs
+from dependency_check import dependency_report
 from evolution import status as evolution_status
 from evolution_store import EvolutionBlocked
 from role_routing import role_plan_fingerprint
@@ -25,6 +26,7 @@ SKILL_FILES = [
     "SKILL.md", "VERSION", "agents/openai.yaml", "scripts/orchestrator.py",
     "scripts/init_project.py", "scripts/route_roles.py", "scripts/check_project_status.py",
     "scripts/lifecycle.py",
+    "scripts/dependency_check.py",
     "scripts/evolution.py", "scripts/evolution_store.py",
     "scripts/platform_runtime.py", "scripts/platform_install.py",
     "scripts/project_layout.py", "scripts/migrate_project.py",
@@ -45,6 +47,7 @@ SKILL_FILES = [
     "references/domain-packs.md", "references/migration.md", "references/platform-adapters.md",
     "references/large-repository-review.md", "references/context-hygiene.md",
     "references/review-and-repair.md", "references/max-capability-guide.md",
+    "references/dependencies.md",
 ]
 
 
@@ -77,6 +80,34 @@ def diagnose(project: Path | None = None) -> dict[str, Any]:
         f"Python {version.major}.{version.minor}.{version.micro}",
         "Install Python 3.9 or newer." if not python_ok else "",
         "runtime",
+    ))
+    dependencies = dependency_report()
+    third_party = next(item for item in dependencies["runtime_dependencies"] if item["id"] == "third-party-python-packages")
+    checks.append(_check(
+        "runtime.third-party-python", "PASS", third_party["evidence"], category="runtime",
+    ))
+    git_dependency = next(item for item in dependencies["optional_feature_dependencies"] if item["id"] == "git")
+    checks.append(_check(
+        "optional.git",
+        "PASS" if git_dependency["status"] == "AVAILABLE" else "WARN",
+        f"Git status={git_dependency['status']}, path={git_dependency['path']}",
+        "Install Git only if Git-backed review, target pinning, or migration evidence is needed." if git_dependency["status"] != "AVAILABLE" else "",
+        "runtime",
+    ))
+    pyyaml = dependencies["development_dependencies"][0]
+    checks.append(_check(
+        "development.pyyaml",
+        "PASS" if pyyaml["status"] == "AVAILABLE" else "INFO",
+        (
+            "PyYAML is available for the optional OpenAI skill-creator quick_validate.py check."
+            if pyyaml["status"] == "AVAILABLE"
+            else "PyYAML is not installed; Skill runtime is unaffected. Only the optional external skill-creator quick_validate.py check is unavailable in this Python environment."
+        ),
+        (
+            "Install PyYAML into the same validator Python environment only if you need quick_validate.py; do not add it merely to run this Skill."
+            if pyyaml["status"] != "AVAILABLE" else ""
+        ),
+        "development",
     ))
     for relative in SKILL_FILES:
         path = SKILL_ROOT / relative

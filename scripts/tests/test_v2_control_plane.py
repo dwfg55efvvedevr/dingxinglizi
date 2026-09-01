@@ -45,10 +45,10 @@ class V2ControlPlaneTests(unittest.TestCase):
     def test_unified_cli_version_doctor_and_eval(self) -> None:
         version = cli("version")
         self.assertEqual(version.returncode, 0, version.stdout)
-        self.assertEqual(version.stdout.strip(), "3.1.0")
+        self.assertEqual(version.stdout.strip(), "3.2.2")
         doctor = cli("doctor", "--json")
         self.assertEqual(doctor.returncode, 0, doctor.stdout)
-        self.assertEqual(json.loads(doctor.stdout)["status"], "READY")
+        self.assertIn(json.loads(doctor.stdout)["status"], {"READY", "READY_WITH_LIMITATIONS"})
         evaluation = cli("eval", "--json")
         self.assertEqual(evaluation.returncode, 0, evaluation.stdout)
         payload = json.loads(evaluation.stdout)

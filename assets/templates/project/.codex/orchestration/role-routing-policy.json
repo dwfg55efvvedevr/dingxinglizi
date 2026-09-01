@@ -1,5 +1,5 @@
 {
-  "policy_version": "1.2.0",
+  "policy_version": "1.3.0",
   "routing_unit": "current_gate",
   "orchestrator_runtime": "main_thread",
   "default_quota_mode": "economy",
@@ -12,5 +12,8 @@
   "professional_agents_may_spawn": false,
   "engineering_lead_may_spawn_workers": true,
   "workers_may_spawn": false,
-  "complex_means_lifecycle_available_not_simultaneous": true
+  "complex_means_lifecycle_available_not_simultaneous": true,
+  "task_mode_precedes_project_lifecycle": true,
+  "explicit_invocation_does_not_force_governed_delivery": true,
+  "quality_governor_is_task_risk_triggered": true
 }

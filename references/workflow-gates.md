@@ -6,7 +6,16 @@
 
 Because UI and architecture may proceed in parallel after UX stabilizes, `docs/project-status.json` records individual gates as well as one `current_state`. `READY_FOR_BUILD` requires `requirements`, `product`, `ux`, `ui`, and `architecture` gates to be `APPROVED`. A Simple project may merge role ownership, but it still records approval evidence for every gate.
 
-Three cross-cutting quality subgates are also mandatory: Problem Quality before `REQUIREMENTS_APPROVED`, Solution Challenge before `READY_FOR_BUILD`, and Release Evidence before `RELEASE_READY`. The checklist is mandatory; a separate Quality Governor is triggered only by the role plan. See [quality-governance.md](quality-governance.md).
+## Delta gate overlay
+
+The canonical lifecycle governs a new product, major module, or `GOVERNED_DELIVERY`; it is not a mandatory state transition sequence for every local iteration. `QUICK_PATCH` and `BOUNDED_CHANGE` record an `iteration_state` without advancing, reopening, or rewriting the project's global state.
+
+- Quick: `TRIAGED → IMPLEMENTING → TARGETED_VALIDATION → COMPLETE`.
+- Bounded: `DELTA_DRAFT → DELTA_READY → IMPLEMENTING → TARGETED_VALIDATION → QA → DELTA_DONE`, with at most one `QA → IMPLEMENTING → TARGETED_VALIDATION → QA` focused-repair loop.
+
+The overlay inherits approved business facts and global constraints. Escalate to the canonical lifecycle only when a task-mode risk trigger or contradictory fact makes the delta unsafe. A reviewer may request a focused correction in the same Compact Delta Contract; a nonmaterial correction does not require new lifecycle planning, role-plan regeneration, or a new full Task Package.
+
+For governed lifecycle work, the three cross-cutting quality subgates remain mandatory. A separate Quality Governor is triggered only by current-task risk. Delta overlays use their compact acceptance and QA evidence instead of manufacturing lifecycle approvals. See [quality-governance.md](quality-governance.md).
 
 | Gate | Required evidence | Failure/rework owner |
 |---|---|---|

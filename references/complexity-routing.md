@@ -1,6 +1,13 @@
 # Complexity routing
 
-Select the lowest level whose conditions cover the work. Complexity is based on scope, ambiguity, coupling, and risk—not estimated lines of code.
+Maintain two separate decisions:
+
+- `project_complexity: Simple | Standard | Complex` describes lifecycle-wide system scope and available responsibilities.
+- `task_mode: QUICK_PATCH | BOUNDED_CHANGE | GOVERNED_DELIVERY` describes the current delta and controls roles, gates, budgets, and validation.
+
+Route the task first with [task-mode-routing.md](task-mode-routing.md). Project complexity may raise a risk floor when current-task evidence supports it, but it must never activate the full lifecycle, Requirements, Architect, or Quality Governor by itself. A Complex platform plus a local copy fix is still `QUICK_PATCH`; a bounded pickup-map plus API fail-closed change is normally `BOUNDED_CHANGE`; a payment-state migration is `GOVERNED_DELIVERY` even if it changes one file.
+
+For project complexity, select the lowest level whose conditions cover the whole system. Complexity is based on scope, ambiguity, coupling, and risk—not estimated lines of code.
 
 ## Simple
 
@@ -36,4 +43,4 @@ Use when scope spans multiple applications/services, permissions or financial fl
 - Downgrade only after the risky decision is resolved and the remaining work is bounded, reversible, and test-protected.
 - Role configuration files do not consume a subagent call. Only an actual delegated execution does. Default to `economy` (one active subagent); allow two only for explicit independent read-only work.
 
-Record the selected level and reasons in `docs/00-project-context.md` and `docs/project-status.json`. Complexity changes lifecycle availability and quality triggers, not simultaneous activity, truthfulness, authorization, or independent QA.
+Record project complexity separately from the current task mode and reasons. A task-mode change creates a new delta decision; it does not rewrite the project's global lifecycle. Complexity changes lifecycle availability, not simultaneous activity, truthfulness, authorization, or independent QA.

@@ -15,8 +15,13 @@ from platform_runtime import (
 )
 
 
-PACKAGE_FILES: Tuple[str, ...] = ("SKILL.md", "VERSION", "LICENSE")
-PACKAGE_DIRECTORIES: Tuple[str, ...] = ("scripts", "references", "assets", "agents", "evals")
+PACKAGE_FILES: Tuple[str, ...] = (
+    "SKILL.md", "VERSION", "LICENSE", "README.md", "USAGE.md", "CHANGELOG.md", "RELEASE_NOTES.md",
+    "CONTRIBUTING.md", "SECURITY.md",
+)
+PACKAGE_DIRECTORIES: Tuple[str, ...] = (
+    "scripts", "references", "assets", "agents", "evals", "examples", "docs", ".github",
+)
 IGNORED_NAMES = {"__pycache__", ".DS_Store"}
 IGNORED_SUFFIXES = {".pyc", ".pyo"}
 

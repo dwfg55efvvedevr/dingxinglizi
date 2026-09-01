@@ -1,15 +1,37 @@
-# Software Project Orchestrator v3.1.0 — 使用手册
+# Software Project Orchestrator v3.2.2 — 使用手册
 
-仓库名是 `dingxinglizi`，稳定调用名是 `$software-project-orchestrator`。v3.1 在原有新建项目、老系统迭代、按需角色/模型路由、阶段门禁、恢复和独立 QA 基础上，新增大型仓库审查与有界修复引擎。
+仓库名是 `dingxinglizi`，稳定调用名是 `$software-project-orchestrator`。v3.2 先判断当前任务是 Quick、Bounded 还是 Governed，再决定流程；显式调用 Skill 不等于启用全部门禁。大型仓库审查与有界修复能力继续保留。
+
+## 0. 先看这条：复杂项目也可以快速处理小任务
+
+调用后第一条回复应包含：`task_mode`、确认范围、启用角色、预计时间、验证方式、升级条件。
+
+- `QUICK_PATCH`：3–15 分钟；0 子 Agent；最多读取 3 份直接相关规则；不初始化 run，不建完整任务包，不跑全量回归。
+- `BOUNDED_CHANGE`：15–45 分钟；最多 1 个并发子 Agent、整个迭代最多 Engineering 与 QA 两个顺序专业会话；使用 `COMPACT-DELTA.template.yaml`；默认没有 Requirements/QG；最终全量回归最多稳定跑一次。
+- `GOVERNED_DELIVERY`：预计时间必须先报告；支付/退款/结算、权限/跨租户数据、隐私/安全/合规、迁移/不可逆数据、并发一致性、生产/外部写入、重大状态机或事实冲突会触发。
+
+Complex 项目改单页文案仍是 Quick；后台地图定位 + API 失败关闭且无迁移通常是 Bounded；支付退款状态机 + 数据迁移是 Governed。若“统一处理”可能从当前页面扩大到多端多页面，Skill 必须先返回 `SCOPE_CONFIRMATION_REQUIRED`，不能擅自扩大。
+
+“调用 Skill”或“走全流程”本身不会提高档位；只有单独明确选择 `--requested-mode BOUNDED_CHANGE|GOVERNED_DELIVERY` 才会主动加严。显式选择可以提高治理等级，但不能把安全计算得到的最低档位降下来。
+
+示例：
+
+```text
+$software-project-orchestrator
+这是现有 Complex 拼团项目。只优化后台自提点定位：地址搜索、地图落点、服务区域配置与 API 失败关闭；不改支付、权限、数据库结构和其他页面。请先按当前任务定尺，不要因为项目总体复杂而重走全生命周期。验收：定向接口异常测试、后台页面流程、相邻回归、独立 QA；最多一轮定点返修。
+```
+
+合理路由结果是 `BOUNDED_CHANGE → Engineering Lead → QA`。如果路由结果出现 Requirements 或 QG，它必须给出当前任务的具体触发证据。
 
 ## 1. 安装与检测
 
-要求 Python 3.9+：
+要求 Python 3.9+。运行时只使用 Python 标准库，不需要 PyYAML。PyYAML 仅影响 OpenAI `skill-creator` 的可选 `quick_validate.py` 开发校验器，不影响本 Skill 被发现、路由和运行：
 
 ```bash
 git clone https://github.com/lizi-product-studio/dingxinglizi.git /tmp/dingxinglizi
 export SPO_SKILL=/tmp/dingxinglizi
 python3 "$SPO_SKILL/scripts/orchestrator.py" version
+python3 "$SPO_SKILL/scripts/orchestrator.py" dependencies
 python3 "$SPO_SKILL/scripts/orchestrator.py" platform detect
 ```
 
@@ -21,6 +43,14 @@ python3 "$SPO_SKILL/scripts/orchestrator.py" platform install --platform codex -
 ```
 
 把 `codex` 换成 `cursor`、`claude-code` 或 `opencode`。OpenCode 离线安装或版本无法解析时必须增加 `--opencode-schema v1|v2`。项目级安装增加目标目录并使用 `--scope project`。已有不同文件不会被覆盖；只有明确增加 `--update` 才更新。安装器不联网、不登录、不读取凭据、不调用包管理器。
+
+依赖诊断会主动列出必需依赖、可选功能依赖、开发校验依赖、缺失影响和处理建议：
+
+```bash
+python3 "$SPO_SKILL/scripts/orchestrator.py" dependencies --json
+```
+
+若只缺 PyYAML，输出必须保持 `RUNTIME_READY`，并提示“Skill 运行不受影响”。只有需要手动运行 OpenAI 外部 `quick_validate.py` 时，才应把 PyYAML 安装到执行该校验器的同一个 Python 环境。详见 [依赖与能力限制](references/dependencies.md)。
 
 平台配置通过仓库内合同测试，不代表当前机器已真实启动四种宿主。用以下命令检查本机证据：
 

@@ -2,6 +2,12 @@
 
 A task package must let an Agent with no chat history complete bounded work safely. Use `assets/templates/project/tasks/TASK.template.yaml` or `scripts/create_task_package.py`.
 
+## Compact Delta Contract
+
+`QUICK_PATCH` needs only a lightweight receipt. `BOUNDED_CHANGE` uses `assets/templates/project/tasks/COMPACT-DELTA.template.yaml` instead of recreating the full project Task Package. It records the problem, confirmed scope, invariant business rules, 3–8 acceptance criteria, targeted validation, risks/rollback, model evidence, owner, independent reviewer, and iteration state. One nonmaterial reviewer correction amends the same contract and increments `repair_round`; do not regenerate role plans or lifecycle fingerprints. A second repair requirement escalates to `TAKEOVER_OR_REPLAN`.
+
+Use the full package below only for `GOVERNED_DELIVERY`, large-repository shards, or a discovered risk that genuinely requires it.
+
 Required fields:
 
 - `task_id`, `project`, `stage`, `status`, `owner`, `reviewer`, `return_to`;
@@ -36,7 +42,7 @@ Rules:
 - Deviations are reported, not hidden. Orchestrator decides whether to amend the package or route upstream.
 - Orchestrator computes the execution profile from the current policy. Owners and reviewers do not hand-edit the chosen model, reasoning effort, risk flags or escalation history.
 - `role_execution.status` and `execution_profile.status` must be `ROUTED`; the role and model fingerprints must match current policies; all required capabilities must be ready before dispatch.
-- Model launch values must match `selected_model` and `model_reasoning_effort`. Record and block a `ROUTE_MISMATCH`.
+- Keep `policy_recommendation`, `user_approved_override`, and `actual_launch_attestation` as separate evidence. A user-approved task override may differ from the recommendation without causing `ROUTE_MISMATCH`; it does not prove what launched and it cannot go below a high-risk safety floor. Block only an unsafe floor/capability/effort/runtime mismatch, not the mere existence of an approved override.
 - A reasoning-quality failure may raise effort and then model tier within `max_attempts`; environment, authorization, input or capability failures do not justify a model upgrade.
 - A context-limit failure narrows inputs, rolls over to a compact new Task Package, or splits the shard before any model escalation. Static token estimates are not host usage evidence. A single over-budget file must be blocked or explicitly range-split; never silently truncate it and claim coverage.
 - Capability discovery is read-only. Only Orchestrator may update the trusted catalog/lock or invoke provisioning; the owner never installs its own dependencies.

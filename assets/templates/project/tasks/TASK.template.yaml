@@ -14,7 +14,7 @@ priority: "P2"
 objective: "BLOCKING_UNKNOWN"
 task_type: "BLOCKING_UNKNOWN"
 role_execution:
-  policy_version: "1.2.0"
+  policy_version: "1.3.0"
   role_plan_fingerprint: "NOT_ROUTED"
   status: "NOT_ROUTED"
   quota_mode: "economy"
@@ -47,6 +47,23 @@ execution_profile:
   max_attempts: 3
   downgrade_policy: "new_low_risk_task_package_only"
   escalation_history: []
+  policy_recommendation:
+    capability_tier: "BLOCKING_UNKNOWN"
+    model: "BLOCKING_UNKNOWN"
+    reasoning_effort: "BLOCKING_UNKNOWN"
+    reasons: []
+  user_approved_override:
+    status: "NOT_PROVIDED"
+    model: "NOT_APPLICABLE"
+    reasoning_effort: "NOT_APPLICABLE"
+    approved_by: "NOT_APPLICABLE"
+    evidence: "NOT_APPLICABLE"
+  actual_launch_attestation:
+    status: "UNVERIFIED"
+    provider: "BLOCKING_UNKNOWN"
+    model: "BLOCKING_UNKNOWN"
+    reasoning_effort: "BLOCKING_UNKNOWN"
+    evidence_source: "BLOCKING_UNKNOWN"
 quality_review:
   gate: "NOT_APPLICABLE"
   review_mode: "NOT_APPLICABLE"

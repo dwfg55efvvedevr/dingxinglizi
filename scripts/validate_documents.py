@@ -149,8 +149,8 @@ def check(root) -> tuple[list[str], list[str]]:
             execution = status.get("execution_control", {})
             if execution.get("model_routing_policy") not in {"1.2.0", "2.0.0"}:
                 errors.append("docs/project-status.json: model_routing_policy must be 1.2.0 or 2.0.0")
-            if execution.get("role_routing_policy") != "1.2.0":
-                errors.append("docs/project-status.json: role_routing_policy must be 1.2.0")
+            if execution.get("role_routing_policy") not in {"1.2.0", "1.3.0"}:
+                errors.append("docs/project-status.json: role_routing_policy must be 1.2.0 or 1.3.0")
             if execution.get("capability_policy") != "1.1.0":
                 errors.append("docs/project-status.json: capability_policy must be 1.1.0")
             if execution.get("quota_mode") not in {"economy", "balanced", "quality_first"}:

@@ -15,7 +15,9 @@ The Quality Governor is a read-only challenger, not a permanent manager and not 
 | Solution Challenge | `READY_FOR_BUILD` | Does the solution follow from the problem, beat alternatives, and form the smallest valuable test? | `docs/checklists/solution-challenge.md` |
 | Release Evidence Challenge | `RELEASE_READY` | Do behavior, outcomes, guardrails, operations, and risks support the release claim? | `docs/checklists/quality-case.md` |
 
-Every project completes the light checklist. `mode: INLINE` lets the Orchestrator record it for low-risk work. `mode: INDEPENDENT` requires a separate `quality_governor` Task Package and evidence. Independent mode is required for Complex projects at solution challenge, for `quality_first`, or when routing sees novelty, evidence conflict, high impact, regulation, release risk, or repeated failure.
+Governed product work completes the applicable light checklist. `mode: INLINE` lets the Orchestrator record it when the decision is bounded. `mode: INDEPENDENT` requires a separate `quality_governor` Task Package and evidence. Independent mode is triggered by the current task—not by project complexity—when problem value is genuinely disputed, evidence conflicts, the solution makes an irreversible architecture or commercial commitment, high-impact security/payment/compliance/data-consistency risk exists, two implementation attempts failed for reasoning reasons, or the user explicitly requests a first-principles challenge.
+
+`QUICK_PATCH` and `BOUNDED_CHANGE` do not start Quality Governor by default, including inside a Complex project. Cross-frontend/API scope alone is not a trigger. A wording-precision concern that does not change implementation scope, safety, data writes, permissions, money, or recoverability is a non-blocking note and must not reopen Requirements or the lifecycle.
 
 ## Adversarial review rules
 

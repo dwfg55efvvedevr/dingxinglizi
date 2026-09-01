@@ -8,7 +8,7 @@ Run it with:
 python3 "$SKILL_DIR/scripts/orchestrator.py" eval
 ```
 
-Passing this suite checks routing invariants such as minimum-role activation, QA separation, quota bounds, review Worker-slot policy, repository-scan/cross-module capability floors, and bounded failure escalation. A context-limit case must request shard splitting/narrowing rather than automatic model escalation.
+Passing this suite checks routing invariants such as Quick/Bounded/Governed task sizing, explicit-invocation fast path, Complex-project local changes, pickup-map/API bounded routing without Requirements/QG, risk-triggered governance, independent QA, quota/wait bounds, review Worker-slot policy, repository-scan/cross-module capability floors, and bounded failure escalation. A context-limit case must request shard splitting/narrowing rather than automatic model escalation.
 
 Large Repository Review Engine state, inventory, shard-budget, finding, repair/rereview and finalization behavior is also covered by the repository's deterministic unit/contract tests. Those tests are intentionally distinct from the human-authored routing suite; do not publish their pass count as a review-accuracy percentage.
 

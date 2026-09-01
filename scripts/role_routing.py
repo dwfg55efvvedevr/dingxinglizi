@@ -7,8 +7,10 @@ import hashlib
 import json
 from typing import Any, Iterable
 
+from task_mode import GOVERNED_TRIGGERS, MODE_BUDGETS, TASK_MODES
 
-POLICY_VERSION = "1.2.0"
+
+POLICY_VERSION = "1.3.0"
 PROFESSIONAL_ROLES = {
     "requirements", "product_auditor", "ux", "ui", "architect",
     "engineering_lead", "qa", "quality_governor",
@@ -29,17 +31,23 @@ KNOWN_SIGNALS = {
     "payment", "compliance", "production", "migration", "concurrency",
     "consistency", "permissions", "irreversible", "ai_safety",
     "large_repository_review",
+    "quick_patch", "bounded_change", "governed_delivery",
+    "explicit_skill_invocation", "full_process_requested", "map_integration",
+    "api_delta", "backend_frontend", "targeted_qa", "reversible_data_write",
+    "p0_incident", "p1_incident", "multi_writer", "state_machine_rewrite",
+    "external_side_effects", "blocking_unknown",
 }
 QUALITY_TRIGGERS = {
     "novel_problem", "evidence_conflict", "high_impact", "regulated",
     "release_risk", "repeated_failure", "security", "privacy", "financial",
     "payment", "compliance", "production", "migration", "irreversible", "ai_safety",
+    "permissions", "concurrency", "consistency", "state_machine_rewrite", "multi_writer",
+    "p0_incident", "p1_incident", "external_side_effects", "blocking_unknown",
 }
 
 
 def validate_role_policy(policy: dict[str, Any]) -> None:
-    expected = {
-        "policy_version": POLICY_VERSION,
+    shared = {
         "routing_unit": "current_gate",
         "orchestrator_runtime": "main_thread",
         "default_quota_mode": "economy",
@@ -54,8 +62,19 @@ def validate_role_policy(policy: dict[str, Any]) -> None:
         "workers_may_spawn": False,
         "complex_means_lifecycle_available_not_simultaneous": True,
     }
-    if policy != expected:
-        raise ValueError("role-routing-policy.json does not match executable policy 1.2.0")
+    legacy_expected = {"policy_version": "1.2.0", **shared}
+    current_expected = {
+        "policy_version": POLICY_VERSION,
+        **shared,
+        "task_mode_precedes_project_lifecycle": True,
+        "explicit_invocation_does_not_force_governed_delivery": True,
+        "quality_governor_is_task_risk_triggered": True,
+    }
+    if policy not in {"legacy": legacy_expected, "current": current_expected}.values():
+        raise ValueError(
+            f"role-routing-policy.json does not match executable policy {POLICY_VERSION} "
+            "or the compatible 1.2.0 policy"
+        )
 
 
 def role_plan_fingerprint(plan: dict[str, Any]) -> str:
@@ -71,7 +90,38 @@ def _quality_gate(stage: str) -> str | None:
 
 
 def _quality_independent(complexity: str, quota_mode: str, signals: set[str]) -> bool:
-    return quota_mode == "quality_first" or complexity == "Complex" or bool(signals & QUALITY_TRIGGERS)
+    # Project size alone is not a quality-governor trigger. Current-task risk is.
+    del complexity
+    return quota_mode == "quality_first" or bool(signals & QUALITY_TRIGGERS)
+
+
+def _task_mode_from_signals(task_mode: str | None, signals: set[str]) -> str:
+    explicit = {
+        "quick_patch": "QUICK_PATCH",
+        "bounded_change": "BOUNDED_CHANGE",
+        "governed_delivery": "GOVERNED_DELIVERY",
+    }
+    signaled = {value for key, value in explicit.items() if key in signals}
+    if len(signaled) > 1:
+        raise ValueError("only one task mode signal may be supplied")
+    resolved = task_mode or (next(iter(signaled)) if signaled else "GOVERNED_DELIVERY")
+    if signals & GOVERNED_TRIGGERS:
+        resolved = "GOVERNED_DELIVERY"
+    if resolved not in TASK_MODES:
+        raise ValueError("task_mode must be QUICK_PATCH, BOUNDED_CHANGE, or GOVERNED_DELIVERY")
+    return resolved
+
+
+def _bounded_roles(iteration_state: str) -> list[str]:
+    if iteration_state in {"DELTA_DRAFT"}:
+        return []
+    if iteration_state in {"DELTA_READY", "IMPLEMENTING", "TARGETED_VALIDATION"}:
+        return ["engineering_lead"]
+    if iteration_state == "QA":
+        return ["qa"]
+    if iteration_state in {"DELTA_DONE", "BLOCKED"}:
+        return []
+    raise ValueError(f"unsupported bounded iteration_state: {iteration_state}")
 
 
 def _base_roles(stage: str, complexity: str, signals: set[str]) -> tuple[list[str], dict[str, list[str]]]:
@@ -138,6 +188,8 @@ def route_roles(
     input_fingerprint: str = "",
     quality_gate_record: dict[str, Any] | None = None,
     routing_cycle_id: str = "",
+    task_mode: str | None = None,
+    iteration_state: str = "DELTA_READY",
 ) -> dict[str, Any]:
     if complexity not in {"Simple", "Standard", "Complex"}:
         raise ValueError("complexity must be Simple, Standard, or Complex")
@@ -152,9 +204,15 @@ def route_roles(
     if unknown_completed:
         raise ValueError("unsupported completed role(s): " + ", ".join(unknown_completed))
 
-    roles, merged = _base_roles(stage, complexity, normalized)
+    resolved_task_mode = _task_mode_from_signals(task_mode, normalized)
+    if resolved_task_mode == "QUICK_PATCH":
+        roles, merged = [], {}
+    elif resolved_task_mode == "BOUNDED_CHANGE":
+        roles, merged = _bounded_roles(iteration_state), {}
+    else:
+        roles, merged = _base_roles(stage, complexity, normalized)
     reasons: dict[str, list[str]] = {role: [f"stage:{stage}", f"complexity:{complexity}"] for role in roles}
-    gate = _quality_gate(stage)
+    gate = _quality_gate(stage) if resolved_task_mode == "GOVERNED_DELIVERY" else None
     quality_status = "NOT_AT_QUALITY_GATE"
     inline_actions: list[str] = []
     record = quality_gate_record or {}
@@ -186,7 +244,7 @@ def route_roles(
             reasons = {}
 
     # An approved solution challenge allows Engineering Lead to activate at READY_FOR_BUILD.
-    if stage == "READY_FOR_BUILD" and reused:
+    if resolved_task_mode == "GOVERNED_DELIVERY" and stage == "READY_FOR_BUILD" and reused:
         roles, merged = _base_roles(stage, complexity, normalized)
         reasons = {role: [f"stage:{stage}", "solution-quality-approval-reused"] for role in roles}
 
@@ -196,7 +254,9 @@ def route_roles(
     if "qa" in roles and "engineering_lead" in roles:
         raise AssertionError("Final QA and Engineering Lead cannot share an activation wave")
 
-    max_active = QUOTA_LIMITS[quota_mode]
+    quota_max_active = QUOTA_LIMITS[quota_mode]
+    mode_max_active = MODE_BUDGETS[resolved_task_mode]["max_active_subagents"]
+    max_active = quota_max_active if mode_max_active == "plan_bound" else min(quota_max_active, int(mode_max_active))
     delegable_workers: list[str] = []
     worker_slots = 0
     worker_signal = (
@@ -230,6 +290,8 @@ def route_roles(
     if not routing_cycle_id:
         cycle_payload = json.dumps({
             "complexity": complexity,
+            "task_mode": resolved_task_mode,
+            "iteration_state": iteration_state if resolved_task_mode == "BOUNDED_CHANGE" else "",
             "stage": stage,
             "quota_mode": quota_mode,
             "signals": sorted(normalized),
@@ -241,11 +303,17 @@ def route_roles(
         "status": "ROUTED",
         "routing_unit": "current_gate",
         "complexity": complexity,
+        "project_complexity": complexity,
+        "task_complexity": resolved_task_mode,
+        "task_mode": resolved_task_mode,
+        "iteration_state": iteration_state if resolved_task_mode == "BOUNDED_CHANGE" else None,
         "current_stage": stage,
         "routing_cycle_id": routing_cycle_id,
         "quota_mode": quota_mode,
         "orchestrator": {"runtime": "main_thread", "spawn": False},
         "max_active_subagents": max_active,
+        "max_subagents": MODE_BUDGETS[resolved_task_mode]["max_subagents"],
+        "max_total_role_sessions": MODE_BUDGETS[resolved_task_mode]["max_total_role_sessions"],
         "required_now": required_now,
         "planned_roles": roles,
         "deferred_sequence": deferred_sequence,
@@ -265,6 +333,34 @@ def route_roles(
         "input_fingerprint": input_fingerprint,
         "reviewer_activation": "deferred_until_owner_handoff",
         "exit_rule": "persist_handoff_release_files_then_remove_from_active_set",
+        "execution_budget": dict(MODE_BUDGETS[resolved_task_mode]),
+        "first_route_summary": {
+            "task_mode": resolved_task_mode,
+            "scope": {
+                "QUICK_PATCH": "local_delta",
+                "BOUNDED_CHANGE": "compact_delta_contract",
+                "GOVERNED_DELIVERY": "governed_project_or_module_scope",
+            }[resolved_task_mode],
+            "planned_agent_count": len(roles),
+            "max_subagents": MODE_BUDGETS[resolved_task_mode]["max_subagents"],
+            "max_active_subagents": MODE_BUDGETS[resolved_task_mode]["max_active_subagents"],
+            "max_total_role_sessions": MODE_BUDGETS[resolved_task_mode]["max_total_role_sessions"],
+            "time_expectation": MODE_BUDGETS[resolved_task_mode]["expected_minutes"],
+        },
+        "bounded_change_contract": (
+            {
+                "required": True,
+                "fields": [
+                    "current_problem", "allowed_scope", "preserved_business_rules",
+                    "acceptance_criteria", "targeted_tests", "risks_and_rollback",
+                ],
+                "workflow": [
+                    "compact_delta_contract", "single_engineering_lead", "targeted_validation",
+                    "independent_qa", "at_most_one_targeted_repair",
+                ],
+            }
+            if resolved_task_mode == "BOUNDED_CHANGE" else None
+        ),
     }
     plan["plan_fingerprint"] = role_plan_fingerprint(plan)
     return plan

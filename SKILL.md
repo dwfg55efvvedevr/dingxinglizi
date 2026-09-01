@@ -1,6 +1,6 @@
 ---
 name: software-project-orchestrator
-description: Initialize, route, resume, govern, review, verify, and learn from substantial multi-agent software delivery across Codex, Cursor, Claude Code, and OpenCode. Use for new products, major modules, cross-stack iterations, or large-repository reviews that need durable business facts, Simple/Standard/Complex routing, on-demand roles, budgeted review shards, context hygiene, coverage evidence, repair/re-review control, product and architecture gates, governed task packages, recovery, or evidence-based completion. Do not use for a small isolated fix or ordinary narrow code review that does not need project orchestration.
+description: Triage, initialize, route, resume, govern, review, verify, and learn from software delivery across Codex, Cursor, Claude Code, and OpenCode. Use for explicit orchestration requests, bounded cross-stack iterations, new products, major modules, or large-repository reviews that need task-sized Quick/Bounded/Governed routing, durable business facts, on-demand roles, review shards, recovery, or evidence-based completion. Small isolated work normally uses a direct workflow, but an explicit invocation still runs mandatory fast-path triage and must not inflate the task.
 ---
 
 # Software Project Orchestrator
@@ -9,7 +9,23 @@ Run one evidence-based delivery system: this Skill owns the workflow; Custom Age
 
 Resolve `SKILL_DIR` as the directory containing this `SKILL.md`. Every bundled command below must use the absolute Skill path, `python3 "$SKILL_DIR/scripts/orchestrator.py" ...`, regardless of the current project working directory.
 
+Before first use on a machine, after installation, or when a command or validator is unavailable, run `python3 "$SKILL_DIR/scripts/orchestrator.py" dependencies` and read [dependencies.md](references/dependencies.md). The portable runtime requires Python 3.9+ and no third-party Python package. PyYAML is development-only for OpenAI skill-creator's optional external validator; its absence must be disclosed but must never be misreported as a Skill runtime failure.
+
+## Mandatory fast-path triage
+
+Before loading lifecycle references, running `doctor`/`resume`, initializing control state, creating a run, or spawning any Agent, classify the current delta with [task-mode-routing.md](references/task-mode-routing.md) as `QUICK_PATCH`, `BOUNDED_CHANGE`, or `GOVERNED_DELIVERY`.
+
+Explicitly invoking this Skill, asking for the “full Orchestrator,” or saying “走全流程” does not authorize the heavy workflow. It requests a complete scope-to-validation loop sized to the current task. A separate, explicit `requested_mode` may raise governance above the computed mode; it can never lower the computed safety floor.
+
+- `QUICK_PATCH`: main session only; no subagent, run/ledger, full Task Package, lifecycle gates, knowledge feedback, or full-suite regression by default. Read no more than the nearest `AGENTS.md`, one directly relevant contract, and affected files. Validate the user-visible artifact first, then targeted checks.
+- `BOUNDED_CHANGE`: main-thread impact scan and Compact Delta Contract, one Engineering Lead, targeted validation, independent QA when the task is medium/high risk, and at most one focused repair. Do not start Requirements or Quality Governor without a recorded task-specific trigger. Do not advance the global lifecycle.
+- `GOVERNED_DELIVERY`: use the initialized lifecycle, governed packages, risk-triggered roles, and independent QA below.
+
+The first user update must report the selected mode, confirmed scope, planned Agents, expected time, and validation. If scope expands beyond the confirmed surfaces/apps, return `SCOPE_CONFIRMATION_REQUIRED`. If time, reference, Agent, or wait budgets are exceeded, stop adding work and return `TAKEOVER_OR_REPLAN` or request the required scope decision. A Complex project does not make a local task Complex.
+
 ## Choose the entry path
+
+This section applies only after triage selects `GOVERNED_DELIVERY`, or when a Bounded command explicitly needs existing safe control state. Quick Patch must not enter here.
 
 1. Read the nearest effective `AGENTS.md`, then inspect `docs/project-status.json`. Use `.dingxinglizi/` when present; otherwise treat an initialized v2 `.codex/orchestration|runs|evolution` tree as one legacy control root. Never mix roots within one command.
 2. New or uninitialized project: detect the host with `platform detect`, then run `python3 "$SKILL_DIR/scripts/orchestrator.py" init PROJECT_DIR --project-name "NAME" --domain "DOMAIN" --complexity Standard --platform PLATFORM`. Use `--domain-pack PACK` only as candidate input; never promote pack content to confirmed project facts.
@@ -29,7 +45,7 @@ Read [platform-adapters.md](references/platform-adapters.md) before installing o
 
 ## Route only the current work
 
-1. Choose `Simple`, `Standard`, or `Complex` with [complexity-routing.md](references/complexity-routing.md). Complexity describes lifecycle responsibilities, not the number of Agents to launch.
+1. Keep `project_complexity` (`Simple`/`Standard`/`Complex`) separate from the already selected current `task_mode`. The task mode controls the current roles and gates; project complexity describes lifecycle availability only. Read [complexity-routing.md](references/complexity-routing.md).
 2. Read [on-demand-role-routing.md](references/on-demand-role-routing.md), persist a validated stage change with `transition` when needed, then preview with `python3 "$SKILL_DIR/scripts/orchestrator.py" plan PROJECT_DIR --quota economy`. Omit `--stage` in the normal flow so the plan cannot drift from persisted lifecycle state.
 3. Persist with `--write` only after inputs are accurate. Activate only `required_now`, in `execution_waves`; profiles on disk are inactive capabilities.
 4. Keep Orchestrator in the main thread. Default to one active subagent; allow two only for a generated two-role read-only wave, or Engineering Lead plus one governed Worker.
@@ -39,7 +55,7 @@ Read [platform-adapters.md](references/platform-adapters.md) before installing o
 
 ## Govern a run and Task Packages
 
-1. Run `python3 "$SKILL_DIR/scripts/orchestrator.py" run PROJECT_DIR` once to create the project-local ledger. Read [run-ledger.md](references/run-ledger.md). Orchestrator is its sole writer.
+1. For `GOVERNED_DELIVERY`, run `python3 "$SKILL_DIR/scripts/orchestrator.py" run PROJECT_DIR` once to create the project-local ledger. Bounded work uses its Compact Delta Contract and iteration overlay instead. Read [run-ledger.md](references/run-ledger.md). Orchestrator is the control record's sole writer.
 2. Before dispatch, verify the active control root's `orchestration/runtime-manifest.json` and runtime capability inventory. A declared model list, installed file, or rendered profile cannot claim runtime availability or actual execution.
 3. Create a DRAFT package with `python3 "$SKILL_DIR/scripts/orchestrator.py" task ...`. The generator binds the current open `run_id`; fill business context, inputs, scope, exclusions, deliverables, acceptance criteria, allowed files, validation, evidence locations, capabilities, and return target. Read [task-packages.md](references/task-packages.md).
 4. Route model and reasoning per Task Package using [model-routing.md](references/model-routing.md). The portable core chooses a capability tier and reasoning effort; the selected platform resolves provider/model from verified runtime evidence. Do not bind a permanent vendor model in role configuration. A valid reasoning failure raises effort before capability; environment, permission, auth, missing-input, or unavailable-tool failures do not waste a model escalation.
@@ -74,7 +90,11 @@ Use this mode only for a substantial whole-repository, monorepo, multi-module, s
 
 Use the canonical lifecycle:
 
+For `GOVERNED_DELIVERY`, use:
+
 `BACKLOG → DISCOVERY → REQUIREMENTS_APPROVED → PRODUCT_APPROVED → (UX_READY and UI_READY) + ARCHITECTURE_READY → READY_FOR_BUILD → IN_DEVELOPMENT → CODE_REVIEW → READY_FOR_QA → QA_PASS → RELEASE_READY → DONE`
+
+Quick and Bounded iterations use the delta overlay in [workflow-gates.md](references/workflow-gates.md); they do not manufacture global lifecycle transitions.
 
 Interrupt with `BLOCKED` or the appropriate `REWORK_REQUIREMENTS`, `REWORK_PRODUCT`, `REWORK_UX`, `REWORK_UI`, `REWORK_ARCHITECTURE`, `REWORK_ENGINEERING`, or `REWORK_QA`. Restore a gate only after its documented re-entry evidence exists.
 

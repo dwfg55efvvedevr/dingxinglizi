@@ -2,6 +2,53 @@
 
 All notable changes are recorded here. Product versions follow semantic versioning; internal routing policy versions are versioned independently.
 
+## [3.2.2] - 2026-09-01
+
+### Added
+
+- Dependency-transparent `orchestrator.py dependencies [--json]` diagnostics covering runtime, optional feature, host, and development-only requirements.
+- Install output and Doctor notices that explain missing dependency impact and remediation without silently installing packages.
+- A dedicated dependency guide and deterministic tests proving that missing PyYAML never blocks the Skill runtime.
+
+### Clarified
+
+- The portable runtime requires Python 3.9+ and no third-party Python packages.
+- Git and host CLIs enable only their corresponding optional features.
+- PyYAML belongs only to OpenAI skill-creator's optional external `quick_validate.py` developer check; it is not a `software-project-orchestrator` runtime dependency.
+
+## [3.2.1] - 2026-09-01
+
+### Fixed
+
+- A separately explicit higher `requested_mode` now raises governance as requested, while ordinary Skill invocation or “full process” wording still uses the smallest sufficient mode.
+- A requested lower mode still cannot bypass the task's computed safety floor.
+- Added regression coverage for Quick-to-Bounded and Quick-to-Governed explicit upgrades.
+
+## [3.2.0] - 2026-09-01
+
+### Added
+
+- Mandatory pre-initialization triage with `QUICK_PATCH`, `BOUNDED_CHANGE`, and `GOVERNED_DELIVERY`, separate from project-level Simple/Standard/Complex classification.
+- Quick and bounded CLI entry points, cost/Agent/reference/wait budgets, scope-confirmation results, iteration overlays, Compact Delta Contract, and `TAKEOVER_OR_REPLAN` wait control.
+- Separate execution safety blockers and nonblocking governance-metadata degradation for local reversible work.
+- Separate model policy recommendation, user-approved override, and actual launch attestation evidence.
+- Routing regressions for explicit invocation, Complex-project local changes, pickup-map/API bounded work, high-risk governed work, absent Requirements/QG, and wait-budget takeover.
+- 10k-file planning performance regression and constant-process Git blob batch reading.
+
+### Changed
+
+- Current task risk, not overall project complexity, now controls roles and gates. Explicit Skill invocation never authorizes the heavy workflow.
+- Quality Governor is risk-triggered; a wording-only precision note is nonblocking.
+- Bounded work uses Engineering → targeted checks → independent QA and at most one focused repair, without global lifecycle churn.
+- User-approved model overrides may differ from policy recommendations without a route-mismatch blocker, while high-risk floors and runtime truth remain fail-closed.
+- Large-review path lookups are indexed instead of quadratic; Git object classification uses one validated `cat-file --batch` process where supported.
+
+### Compatibility and limits
+
+- Stable invocation remains `$software-project-orchestrator`; v3.1 projects and policy inputs remain readable.
+- Quick/Bounded routing does not weaken authorization for production, credentials, external writes, destructive actions, migrations, or public release.
+- On Windows, Git content classification may use the explicitly reported safe per-object fallback because portable pipe waiting differs.
+
 ## [3.1.0] - 2026-08-31
 
 ### Added

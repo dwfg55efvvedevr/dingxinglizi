@@ -22,8 +22,8 @@ Reasoning effort is a separate requirement: `none`, `minimal`, `low`, `medium`, 
 2. A runtime manifest records platform, executable evidence, model inventory source, model IDs, providers, tiers, and supported efforts.
 3. `--models-verified` requires an explicit file and evidence source; an unverified declaration cannot authorize a high-risk route.
 4. `model-resolve` selects the lowest available model meeting or exceeding the requested tier and, where required, the exact reasoning effort.
-5. A Task Package records platform, provider, selected model, reasoning, policy versions, risks, and `actual_model_attested: false` before launch.
-6. A real host execution receipt separately attests actual provider/model/reasoning/runtime; only then can platform compatibility reach L4.
+5. A Task Package records three separate facts: `policy_recommendation`, an optional `user_approved_override`, and `actual_launch_attestation`. Recommendation is advice; override is an authorized task choice; neither is proof of launch.
+6. A real host execution receipt separately attests actual provider/model/reasoning/runtime; only then can platform compatibility reach L4. Never copy an override into attestation.
 
 For policy `2.0.0`, `task` and `preflight` reject the legacy `--available-model` override. Without a currently valid manifest, the generated route is `BLOCKED_RUNTIME_MANIFEST_REQUIRED` with unresolved platform/provider/model fields. This prevents a caller-supplied vendor slug from being promoted into verified runtime evidence.
 
@@ -32,6 +32,8 @@ For policy `2.0.0`, `task` and `preflight` reject the legacy `--available-model`
 Security, privacy, financial/payment, compliance, production, migration, permissions, irreversible change, regulated work, and AI-safety flags are high-risk. High-risk resolution requires verified executable and model inventory evidence and cannot silently bind a missing reasoning level.
 
 If no model meets the floor, return `BLOCKED_MODEL_UNAVAILABLE`. If the runtime or inventory is unverified for high risk, return `BLOCKED_UNVERIFIED_HIGH_RISK_RUNTIME`. If the selected model cannot bind the required effort, return `BLOCKED_REASONING_EFFORT_UNAVAILABLE`.
+
+For a local, reversible Quick/Bounded task below the high-risk floor, an explicitly approved model or host default may proceed with `actual_launch_attestation.status: UNVERIFIED` when inventory evidence is missing. Report `GOVERNANCE_METADATA_DEGRADED`; do not claim that a provider/model was observed. A recommendation-versus-override difference alone is never a blocker. High-risk capability, reasoning, and runtime evidence remain fail-closed.
 
 ## Failure escalation
 

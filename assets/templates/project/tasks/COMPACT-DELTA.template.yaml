@@ -1,0 +1,44 @@
+schema_version: 1
+delta_id: "DELTA-000"
+project: "{{PROJECT_NAME}}"
+project_complexity: "Standard"
+task_mode: "BOUNDED_CHANGE"
+iteration_state: "DELTA_DRAFT"
+owner: "engineering_lead"
+reviewer: "qa"
+problem: "BLOCKING_UNKNOWN"
+confirmed_scope: []
+out_of_scope: []
+invariant_business_rules: []
+acceptance_criteria:
+  - id: "AC-001"
+    outcome: "BLOCKING_UNKNOWN"
+    evidence: "BLOCKING_UNKNOWN"
+targeted_validation:
+  commands: []
+  manual: []
+  user_visible_artifact: "BLOCKING_UNKNOWN"
+final_regression:
+  required: true
+  run_once_after_targeted_checks: true
+risks: []
+rollback: "BLOCKING_UNKNOWN"
+budget:
+  max_active_subagents: 1
+  max_total_role_sessions: 2
+  expected_minutes: "15-45"
+  max_repair_rounds: 1
+repair_round: 0
+quality_governor:
+  required: false
+  trigger: "NONE"
+execution_profile:
+  policy_recommendation: {}
+  user_approved_override:
+    status: "NOT_PROVIDED"
+  actual_launch_attestation:
+    status: "UNVERIFIED"
+metadata_health:
+  status: "CURRENT"
+  degradations: []
+evidence: []

@@ -322,7 +322,7 @@ def validate_project_root(root: Path) -> Path:
     role_plan_path = control_path(root, "orchestration/role-plan.json")
     role_plan = load_json_file(root, role_plan_path.relative_to(root.resolve()))
     # The v2.0 role-plan contract is versioned by policy_version rather than schema_version.
-    if role_plan.get("policy_version") != "1.2.0" or role_plan.get("status") not in {"NOT_ROUTED", "ROUTED"}:
+    if role_plan.get("policy_version") not in {"1.2.0", "1.3.0"} or role_plan.get("status") not in {"NOT_ROUTED", "ROUTED"}:
         raise ValueError("Role plan does not match the initialized v2 contract")
     return root
 

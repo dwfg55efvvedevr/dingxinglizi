@@ -2,6 +2,8 @@
 
 Role files are an installed capability library, not a promise to start every Agent. The Orchestrator stays in the main thread and routes only the current gate. A role exits after returning its bounded artifact; later work reads that artifact from project documents instead of keeping the role alive.
 
+Route the current delta with [task-mode-routing.md](task-mode-routing.md) before using lifecycle stages. `QUICK_PATCH` uses the main session and no child Agent by default. `BOUNDED_CHANGE` uses the minimum sequence `Orchestrator compact contract → one Engineering Lead → independent QA when required`; Requirements and Quality Governor are absent unless a concrete trigger is recorded. `GOVERNED_DELIVERY` uses the lifecycle router below. Explicit invocation does not change this decision.
+
 ## Runtime sequence
 
 1. Read `docs/project-status.json` and route the current stage with `python3 "$SKILL_DIR/scripts/route_roles.py"`.
@@ -18,7 +20,7 @@ Completed roles accumulate inside one `routing_cycle_id`, so a two-wave gate end
 |---|---:|---|
 | `economy` | 1 | Default. Sequential roles, minimum calls, all hard gates retained. |
 | `balanced` | up to 2 | Parallel read-only work only when inputs and file ownership are independent. |
-| `quality_first` | up to 2 | Adds independent Quality Governor reviews at the three quality subgates. |
+| `quality_first` | up to 2 | Increases adversarial scrutiny, but starts Quality Governor only on a current-task risk trigger. |
 
 Quota mode controls concurrency and optional independent review; it never merges final QA into development, skips a hard gate, or permits silent assumptions.
 
@@ -52,4 +54,4 @@ python3 "$SKILL_DIR/scripts/route_roles.py" PROJECT_DIR --stage READY_FOR_QA --w
 
 Unknown stages, signals, completed roles, handoff proofs, policies, and quota modes fail closed. `--write` persists the role plan and synchronizes `quota_mode` plus `max_active_subagents` in `docs/project-status.json`; it does not start Agents. A switch to a smaller quota is rejected while too many sessions remain active.
 
-For an independent Problem Quality review, Requirements runs in wave 1. After its complete Task Contract, handoff, and updated input documents are persisted, close the session and re-route with the same quality-triggering signals plus its verified `--completed-role/--completed-task` proof. The fresh plan then contains only Quality Governor. Do not pre-create or pre-start the second-wave task against the old input fingerprint.
+For a genuinely triggered independent Problem Quality review, Requirements runs in wave 1 only when requirements themselves need repair. After its complete Task Contract, handoff, and updated input documents are persisted, close the session and re-route with the same quality-triggering signals plus its verified completion proof. Do not create this wave for a nonblocking wording note or merely because the project is Complex.

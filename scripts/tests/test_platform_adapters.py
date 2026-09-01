@@ -310,7 +310,7 @@ class PlatformInstallTests(unittest.TestCase):
             self.assertEqual(reinstall["status"], "BLOCKED_CONFLICT")
             self.assertTrue(any(Path(item).name == "qa.md" for item in reinstall["conflicts"]))
 
-    def test_every_platform_and_scope_install_carries_v31_review_runtime_and_guides(self) -> None:
+    def test_every_platform_and_scope_install_carries_current_runtime_guides_and_security_docs(self) -> None:
         expected_license = (ROOT / "LICENSE").read_bytes()
         for platform in PLATFORM_CHOICES:
             for scope in ("user", "project"):
@@ -333,6 +333,9 @@ class PlatformInstallTests(unittest.TestCase):
                         self.assertTrue((installed / "evals/large-review-v3.json").is_file())
                         self.assertTrue((installed / "references/large-repository-review.md").is_file())
                         self.assertTrue((installed / "references/max-capability-guide.md").is_file())
+                        self.assertEqual((installed / "SECURITY.md").read_bytes(), (ROOT / "SECURITY.md").read_bytes())
+                        self.assertEqual((installed / "CONTRIBUTING.md").read_bytes(), (ROOT / "CONTRIBUTING.md").read_bytes())
+                        self.assertTrue((installed / "docs/development/v3.1-large-repository-review-engine.md").is_file())
 
 
 class RuntimeAndModelTests(unittest.TestCase):

@@ -146,8 +146,9 @@ class RoleRoutingTests(unittest.TestCase):
     def test_complex_does_not_start_all_roles(self) -> None:
         plan = route_roles(complexity="Complex", stage="DISCOVERY")
         self.assertEqual(plan["required_now"], ["requirements"])
-        self.assertEqual(plan["deferred_sequence"], ["quality_governor"])
-        self.assertEqual(plan["execution_waves"], [["requirements"], ["quality_governor"]])
+        self.assertEqual(plan["deferred_sequence"], [])
+        self.assertEqual(plan["execution_waves"], [["requirements"]])
+        self.assertNotIn("quality_governor", plan["planned_roles"])
         self.assertLess(len(plan["required_now"]), len(plan["deferred_available"]))
 
     def test_standard_product_gate_only_uses_product_auditor(self) -> None:
